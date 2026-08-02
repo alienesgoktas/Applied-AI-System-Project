@@ -1,12 +1,8 @@
 """
 Command line runner for the Music Recommender Simulation.
 
-This file helps you quickly run and test your recommender.
-
-You will implement the functions in recommender.py:
-- load_songs
-- score_song
-- recommend_songs
+Loads the catalog and prints the top-k recommendations for a taste profile,
+each with a plain-language explanation of why it was chosen.
 """
 
 from src.recommender import load_songs, recommend_songs

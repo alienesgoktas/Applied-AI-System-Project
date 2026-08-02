@@ -2,15 +2,6 @@
 
 ## Project Summary
 
-In this project you will build and explain a small music recommender system.
-
-Your goal is to:
-
-- Represent songs and a user "taste profile" as data
-- Design a scoring rule that turns that data into recommendations
-- Evaluate what your system gets right and wrong
-- Reflect on how this mirrors real world AI recommenders
-
 **My version** is a content-based music recommender built on a 20-song catalog.
 The user describes the kind of music they want — a genre, a mood, a target energy
 level, and whether they prefer acoustic or produced sound — and the system scores
