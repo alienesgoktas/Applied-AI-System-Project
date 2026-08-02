@@ -1,28 +1,51 @@
-%% System architecture — Music Recommender Simulation
-%% Source file (required). Preview at https://mermaid.live and export a PNG to assets/ if desired.
+%% RAG + reliability architecture — Music Recommender
+%% Source of truth. Preview at https://mermaid.live or view rendered on GitHub.
+%% Input -> process -> output, with the retriever, grounded generator, guardrail,
+%% and evaluator called out, plus where tests and humans check the AI output.
 flowchart TB
-    USER(["User taste profile<br/>genre · mood · target energy<br/>target valence · likes acoustic"])
-    OUT(["Top-k recommendations<br/>ranked, each with a plain-language 'why'"])
+    USER([User: plain-English request]):::io
+    OUT([Ranked songs + deterministic reasons<br/>+ confidence + honesty note + AI summary + badge]):::io
+    CSV[("data/songs.csv<br/>20-song catalog")]:::data
+    LOG[("logs/app.log")]:::data
 
-    subgraph Data["Data layer"]
-        CSV[("data/songs.csv<br/>20-song catalog")]
+    subgraph Backends["LLM backend — pluggable, local-first (src/backends.py)"]
+        direction LR
+        LOCAL["LocalServerBackend<br/>POST /api/v1/chat"]
+        ANTH["AnthropicBackend<br/>Claude, BYOK"]
+        OFFB["Offline<br/>(no backend)"]
     end
 
-    subgraph Core["Core engine — src/recommender.py"]
-        LOAD["load_songs()<br/>parse rows · cast numeric fields"]
-        STRAT["ScoringStrategy (frozen weights)<br/>BALANCED · ENERGY_FIRST<br/>MOOD_BLIND · GENRE_PURIST"]
-        SCORE["score_song()<br/>genre + mood + energy<br/>+ valence + acoustic<br/>→ (score, reasons)"]
-        RANK["recommend_songs() / Recommender.recommend()<br/>sort by score desc · tie-break by id · take top-k"]
+    subgraph Core["RAG pipeline — src/pipeline.py :: recommend_from_query"]
+        PARSE["parse_profile<br/>NL request -> taste profile<br/>(LLM extractor OR keyword fallback)"]
+        RETR["RETRIEVER — recommend_songs<br/>score every song, rank top-k"]
+        GEN["GROUNDED GENERATOR<br/>generate_explanation (LLM)"]
+        GUARD{"GUARDRAIL<br/>every pick title<br/>in retrieved set?"}
+        DET["Deterministic explanation<br/>(scoring reasons)"]
+        CONF["EVALUATOR — score_confidence<br/>confidence + honesty note"]
     end
 
-    subgraph Interfaces["Interfaces"]
-        CLI["src/main.py<br/>CLI runner · explained output"]
-        TESTS["tests/test_recommender.py<br/>pytest suite"]
+    subgraph Checks["Where AI output is checked"]
+        TESTS["pytest (50, mocked backend):<br/>guardrail, fallback, confidence, empty guards"]
+        HUMAN["Human evaluation<br/>(table in model_card.md)"]
     end
 
-    CSV --> LOAD --> SCORE
-    USER --> SCORE
-    STRAT -. injected weights .-> SCORE
-    SCORE --> RANK --> CLI --> OUT
-    SCORE -. unit-tested .-> TESTS
-    RANK -. unit-tested .-> TESTS
+    USER --> PARSE
+    Backends -. injected .-> PARSE
+    Backends -. injected .-> GEN
+    CSV --> RETR
+    PARSE --> RETR
+    RETR --> CONF
+    RETR --> GEN
+    GEN --> GUARD
+    GUARD -- valid --> OUT
+    GUARD -- "hallucination / error" --> DET
+    DET --> OUT
+    CONF --> OUT
+    Core -. logs .-> LOG
+
+    GUARD -. asserted by .-> TESTS
+    CONF -. asserted by .-> TESTS
+    OUT -. reviewed by .-> HUMAN
+
+    classDef io fill:#e8f0fe,stroke:#4285f4,color:#111;
+    classDef data fill:#fef7e0,stroke:#f9ab00,color:#111;

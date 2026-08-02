@@ -266,3 +266,47 @@ than being a number I wrote down once.
 
 Test count went from 10 to 17.
 
+## Module 4 — RAG + Reliability Layer (SF)
+
+This module was built in a pair-programming session with an AI coding agent. The plan,
+code, and tests were produced collaboratively; the load-bearing interactions are below.
+
+### Prompt — designing the AI feature
+
+> *"I want to add a genuine, fully-integrated AI feature to the recommender."*
+
+**What it produced:** a plan to turn the recommender into the **retriever** of a RAG pipeline
+(NL request → taste profile → retrieve top-k → grounded explanation), wrapped in a reliability
+layer (confidence + honesty note + grounding guardrail + tests), provider-neutral and
+local-first with a deterministic offline fallback.
+
+**What I took from it:** the whole architecture — retriever-as-RAG, the guardrail, strategy-aware
+confidence, and the offline fallback for reproducibility.
+
+**What I verified:** 50 tests (mocked, no key/server), the offline CLI, and a live run against my
+local `gemma4-12b-says-v2` server — the guardrail held (every pick was a real catalog song).
+
+### Prompt — backend shape (a flawed assumption I caught)
+
+**What it produced:** an initial design assuming my local server was OpenAI-compatible
+(`/v1/chat/completions` via the `openai` SDK).
+
+**What I took from it:** nothing — it was wrong for my setup.
+
+**What I verified:** I shared my actual `curl` (a custom `POST /api/v1/chat` with a
+`{model, system_prompt, input}` body). We replaced the OpenAI assumption with a small stdlib
+`urllib` client tuned to the real contract, and dropped the `openai` dependency.
+
+### Prompt — confidence denominator (a helpful catch)
+
+**What it produced:** a code review flagging that a hardcoded max score (6.5) would make
+confidence falsely saturate at 1.0 for non-default scoring strategies.
+
+**What I took from it:** deriving the denominator from the active strategy
+(`ScoringStrategy.max_score()`), so confidence stays honest for any strategy.
+
+**What I verified:** a regression test, `test_confidence_is_strategy_aware_and_does_not_saturate`,
+confirming GENRE_PURIST no longer saturates.
+
+Test count went from 17 to 50.
+

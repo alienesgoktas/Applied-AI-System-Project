@@ -318,3 +318,90 @@ I also came away thinking explainability is underrated. My whole system can be
 checked with a calculator, and that is how I found out mood was doing nothing.
 Real recommenders cannot be audited that way, which means a flaw like mine could
 sit in one for years without anyone noticing.
+
+---
+
+# Responsible AI — the RAG + Reliability Layer (Module 4)
+
+The sections above describe the original content-based recommender. This part adds an
+LLM layer that turns it into a RAG system (natural-language request in, grounded
+recommendation out) and reflects on the responsibility questions that raises. It was
+built in a pair-programming session with an AI coding agent.
+
+## 10. Limitations and biases in the AI layer
+
+All of the original limitations (tiny catalog, uneven failure for niche taste, no
+dislikes — see §6) still hold; the LLM does **not** fix them. New AI-specific ones:
+
+- **Hallucination is possible but bounded.** An LLM could name or describe a song that is
+  not in the catalog. A **grounding guardrail** rejects any recommended title that isn't in
+  the retrieved set and falls back to the deterministic explanation. But the guardrail only
+  validates song **titles** — the free-text prose (why a song fits) is **not**
+  machine-fact-checked, so a plausible-but-wrong claim in the AI summary could slip through.
+  That is why the deterministic scoring reasons are **always shown beside** the summary as
+  the authoritative record, and the summary is labelled "advisory."
+- **Non-determinism.** The same request can produce slightly different phrasing or picks
+  across runs. Retrieval and confidence are deterministic; only the LLM prose varies.
+- **Local-model quality variance.** The default backend is a small (~12B) local model; its
+  request-parsing and phrasing are weaker than a frontier model's, and a poor parse can
+  mis-read a request. The deterministic keyword fallback and the always-visible reasons
+  bound the damage.
+- **Inherited model bias.** The LLM carries its training biases (Western/English-centric),
+  which can shape how it interprets an ambiguous request.
+
+## 11. Could this be misused, and how would I prevent it?
+
+- **Cost/key abuse (BYOK).** A public deploy could run prompts on someone's API key, or a key
+  could leak. Prevention: keys are **never stored or logged** (masked field, session-only; only
+  the backend *name* is logged), and a public deploy should default to offline or require each
+  visitor's own key so no one pays for others.
+- **Data exfiltration / prompt injection.** A crafted request cannot make the system recommend
+  a non-catalog song (guardrail) or read a secret (the LLM never sees the key; only retrieved
+  song facts are in the prompt). The worst case is an odd AI summary, bounded by the shown
+  deterministic reasons.
+- **Over-trust.** With only 20 songs and no fairness safeguards, this must not be used as a real
+  product recommender (see §2). The honesty note is a deliberate guard against over-trust.
+
+## 12. What surprised me while testing reliability
+
+- **The small local model rarely returns clean JSON** — it wraps objects in prose or code
+  fences. A naive `json.loads` would have failed constantly; the tolerant `_extract_json`
+  brace-matcher was essential, and writing edge-case tests for it (brace-inside-a-string,
+  code-fenced) caught real bugs.
+- **The guardrail earned its keep.** On some live runs the model embellished descriptions;
+  constraining picks to the retrieved set — and showing the real reasons — was the line between
+  "trustworthy" and "merely plausible."
+- **Reliability came from the architecture, not the model.** Dependency-injecting the backend
+  made the whole system testable and reproducible at zero cost (50 mocked tests, no key/server).
+
+## 13. Collaboration with AI
+
+- **One helpful suggestion.** A code review flagged that my confidence denominator was hardcoded
+  to 6.5 (the balanced-strategy maximum) while the pipeline exposes other scoring strategies
+  whose maximum exceeds 6.5 — so confidence would have silently pegged at 1.0 (falsely
+  over-confident) for those strategies, the exact honesty failure this feature exists to prevent.
+  I adopted its fix: derive the denominator from the active strategy (`ScoringStrategy.max_score()`).
+  A regression test now protects it.
+- **One flawed suggestion.** The AI initially assumed my local LLM server was OpenAI-compatible
+  and proposed adding the `openai` SDK against `/v1/chat/completions`. That was wrong — my server
+  is a custom `POST /api/v1/chat` with a `{model, system_prompt, input}` body. I caught it by
+  sharing the actual `curl`; we replaced the plan with a small stdlib `urllib` client tuned to the
+  real contract and dropped the needless dependency. Lesson: verify an external API's shape
+  against the real endpoint — never assume a convention.
+
+## 14. Human evaluation
+
+Requests I ran by hand and judged (offline unless noted "local"):
+
+| Test Input | Evaluation Criteria | Result |
+|---|---|---|
+| "chill acoustic music to study to" (local) | Low-energy/acoustic picks; AI summary names only real songs | Pass — lofi/focused, all picks in catalog |
+| "sad folk songs" (offline) | One real match, then an honest "weak results" warning | Pass — Winter Letters #1 (4.61), cliff to 2.52, honesty note fired |
+| "upbeat pop for a workout" (local) | High-energy pop picks; grounded summary | Pass — pop/euphoric; Gym Hero / Sunrise City / Basement Party (all real) |
+| Empty request "" | Handles gracefully, no crash | Pass — neutral profile, still returns k songs |
+| Garbage "!!!###" | No crash, returns results | Pass — neutral profile, 5 results |
+| Injected hallucinated title (test) | Guardrail rejects; falls back to deterministic | Pass — invented title absent, `used_llm=False` |
+| Backend/server down (test) | Degrades to offline, no crash | Pass — offline path, `[offline]` badge |
+
+**7/7 criteria met.** The failure modes I designed for — hallucination, backend down, empty
+input — all degraded safely rather than crashing or misleading the user.
