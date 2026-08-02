@@ -234,13 +234,11 @@ python -m src.main
 
 ### Running Tests
 
-Run the starter tests with:
+Run the test suite with:
 
 ```bash
 pytest
 ```
-
-You can add more tests in `tests/test_recommender.py`.
 
 ---
 
@@ -303,8 +301,6 @@ both pop *and* happy at roughly the right energy, and it wins by a clear margin.
 outranks a mood-only match, exactly as predicted. Whether that is right depends
 on the listener: someone who searched for "happy" music may be unimpressed to be
 handed a gym track third.
-
-**Screenshot or video** *(optional)*: <!-- Insert a screenshot or demo video link here -->
 
 ---
 
@@ -395,7 +391,7 @@ Full detail, including the fairness angle, is in [`model_card.md`](model_card.md
 
 ## Reflection
 
-Read and complete `model_card.md`:
+The full reflection — data, fairness, and evaluation — lives in the model card:
 
 [**Model Card**](model_card.md)
 
