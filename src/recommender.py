@@ -20,6 +20,14 @@ class ScoringStrategy:
     valence: float = 0.5        # scaled by closeness to the user's target
     acoustic: float = 1.0       # scaled by acousticness, or its inverse
 
+    def max_score(self) -> float:
+        """Highest total a song can earn under this strategy (every term maxed)."""
+        return self.genre + self.mood + self.energy + self.valence + self.acoustic
+
+    def categorical_max(self) -> float:
+        """Most the categorical terms alone can contribute (exact genre + mood)."""
+        return self.genre + self.mood
+
 
 # The recipe documented in README.md, plus the variants used in Phase 4.
 BALANCED = ScoringStrategy()

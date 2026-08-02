@@ -14,5 +14,10 @@ venv/
 # Pytest cache
 .pytest_cache/
 
+# Secrets and runtime logs (never commit an API key; BYOK/local only)
+.env
+.env.*
+logs/
+
 # Local tooling / workflow metadata (tech-debt snapshots, review trail)
 .claude/

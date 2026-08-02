@@ -1,29 +1,54 @@
 """
 Command line runner for the Music Recommender Simulation.
 
-Loads the catalog and prints the top-k recommendations for a taste profile,
-each with a plain-language explanation of why it was chosen.
+Takes a plain-English request (as command-line args or an interactive prompt),
+runs the RAG pipeline, and prints the ranked songs with their deterministic
+scoring reasons, a confidence/honesty note, and an AI-written summary. The LLM
+backend is chosen from the environment (LLM_BACKEND=local|anthropic|off); with no
+backend it runs free in deterministic offline mode.
+
+Usage:
+    python -m src.main "chill acoustic music to study to"
+    python -m src.main            # prompts interactively
 """
 
-from src.recommender import load_songs, recommend_songs
+import sys
+
+from src.backends import select_backend
+from src.pipeline import recommend_from_query
+from src.recommender import load_songs
 
 CATALOG = "data/songs.csv"
+DEMO_QUERY = "upbeat happy pop for a workout"
 
 
-def print_recommendations(user_prefs: dict, songs: list, k: int = 5) -> None:
-    """Prints the top k recommendations for one profile in a readable block."""
+def _print_result(result: dict) -> None:
+    """Print one pipeline result: header, ranked songs + reasons, AI summary."""
+    provider = result["backend"].split(":")[0]
+    llm_active = result["used_llm"] or result["profile_source"] == "llm"
+    badge = f"[{provider}]" if llm_active else "[offline]"
+
+    p = result["profile"]
+    conf = result["confidence"]
     print("=" * 68)
-    print(f"  Profile: {user_prefs['favorite_genre']} / {user_prefs['favorite_mood']}"
-          f" | energy {user_prefs['target_energy']:.2f}"
-          f" | valence {user_prefs['target_valence']:.2f}"
-          f" | {'acoustic' if user_prefs['likes_acoustic'] else 'produced'}")
+    print(f"  You asked: {result['query']}   {badge}")
+    print(
+        f"  Understood as: {p['favorite_genre'] or '(any)'} / "
+        f"{p['favorite_mood'] or '(any)'} | energy {p['target_energy']:.2f}"
+        f" | valence {p['target_valence']:.2f}"
+        f" | {'acoustic' if p['likes_acoustic'] else 'produced'}"
+    )
+    print(f"  Confidence: {conf['confidence']:.2f} - {conf['note']}")
     print("=" * 68)
 
-    for rank, (song, score, explanation) in enumerate(recommend_songs(user_prefs, songs, k), 1):
+    for rank, (song, score, reasons) in enumerate(result["results"], 1):
         print(f"\n{rank}. {song['title']} - {song['artist']}")
         print(f"   Score: {score:.2f}   [{song['genre']} / {song['mood']}]")
-        for reason in explanation.split("; "):
+        for reason in reasons.split("; "):
             print(f"     - {reason}")
+
+    print("\n--- AI summary (advisory; the reasons above are the record) ---")
+    print(result["explanation"])
     print()
 
 
@@ -31,16 +56,19 @@ def main() -> None:
     songs = load_songs(CATALOG)
     print(f"Loaded songs: {len(songs)}\n")
 
-    # Starter example profile
-    user_prefs = {
-        "favorite_genre": "pop",
-        "favorite_mood": "happy",
-        "target_energy": 0.8,
-        "target_valence": 0.7,
-        "likes_acoustic": False,
-    }
+    query = " ".join(sys.argv[1:]).strip()
+    if not query:
+        try:
+            query = input("Describe the music you want (blank for a demo): ").strip()
+        except EOFError:
+            query = ""
+    if not query:
+        query = DEMO_QUERY
+        print(f"(no request given — using demo: {query!r})\n")
 
-    print_recommendations(user_prefs, songs, k=5)
+    backend = select_backend()
+    result = recommend_from_query(query, songs, k=5, backend=backend)
+    _print_result(result)
 
 
 if __name__ == "__main__":
