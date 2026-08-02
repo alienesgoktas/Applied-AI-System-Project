@@ -1,8 +1,10 @@
 """Content-based music recommender: scores songs against a user taste profile."""
 
 import csv
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Callable, Optional, TypeVar
 from dataclasses import dataclass
+
+T = TypeVar("T")
 
 NUMERIC_FIELDS = ("energy", "tempo_bpm", "valence", "danceability", "acousticness")
 
@@ -70,7 +72,7 @@ class Recommender:
 
     def recommend(self, user: UserProfile, k: int = 5) -> List[Song]:
         """Returns the k best-scoring songs for the user, highest score first."""
-        return sorted(self.songs, key=lambda s: (-self.score(user, s)[0], s.id))[:k]
+        return _top_k(self.songs, lambda s: self.score(user, s)[0], lambda s: s.id, k)
 
     def explain_recommendation(self, user: UserProfile, song: Song) -> str:
         """Explains in one sentence why a song was recommended to a user."""
@@ -97,6 +99,34 @@ def load_songs(csv_path: str) -> List[Dict]:
 def _closeness(a: float, b: float) -> float:
     """Returns 1.0 when two 0-1 values match, falling to 0.0 as they diverge."""
     return 1.0 - abs(a - b)
+
+
+def _closeness_term(user_prefs: Dict, song: Dict, feature: str, target_key: str,
+                    weight: float) -> Tuple[float, Optional[str]]:
+    """Scores one numeric feature by closeness of song[feature] to the user's target.
+
+    Returns (points, reason). When the user gives no target for this feature or the
+    strategy zeroes its weight, returns (0.0, None) and the caller adds nothing.
+    Shared by the energy and valence terms so their formatting and guard logic
+    cannot silently drift apart.
+    """
+    target = user_prefs.get(target_key)
+    if target is None or not weight:
+        return 0.0, None
+    target = float(target)
+    value = song[feature]
+    points = weight * _closeness(value, target)
+    return points, f"{feature} {value:.2f} vs target {target:.2f} (+{points:.2f})"
+
+
+def _top_k(items: List[T], score_of: Callable[[T], float],
+           id_of: Callable[[T], int], k: int) -> List[T]:
+    """Returns the k highest-scoring items, best first, ties broken by id_of.
+
+    Pure: builds a new list via sorted(), so the caller's input is never reordered.
+    This is the single ranking rule shared by Recommender.recommend and recommend_songs.
+    """
+    return sorted(items, key=lambda item: (-score_of(item), id_of(item)))[:k]
 
 
 def score_song(user_prefs: Dict, song: Dict,
@@ -126,21 +156,19 @@ def score_song(user_prefs: Dict, song: Dict,
         score += strategy.mood
         reasons.append(f"mood match: {want_mood} (+{strategy.mood:.1f})")
 
-    # 3. Energy - scored by closeness to the target, not by magnitude, so a
-    #    user wanting calm music is not handed the most intense track.
-    if user_prefs.get("target_energy") is not None and strategy.energy:
-        points = strategy.energy * _closeness(song["energy"], float(user_prefs["target_energy"]))
-        score += points
-        reasons.append(f"energy {song['energy']:.2f} vs target "
-                       f"{float(user_prefs['target_energy']):.2f} (+{points:.2f})")
-
-    # 4. Valence - same idea, smaller weight. The only numeric not strongly
-    #    correlated with energy, so it separates dark from bright.
-    if user_prefs.get("target_valence") is not None and strategy.valence:
-        points = strategy.valence * _closeness(song["valence"], float(user_prefs["target_valence"]))
-        score += points
-        reasons.append(f"valence {song['valence']:.2f} vs target "
-                       f"{float(user_prefs['target_valence']):.2f} (+{points:.2f})")
+    # 3-4. Numeric closeness terms. Each is scored by closeness to the user's
+    #      target, not by magnitude, so a user wanting calm music is not handed
+    #      the most intense track. Valence carries the smaller weight; it is the
+    #      only numeric not strongly correlated with energy, so it separates dark
+    #      from bright. Both go through one helper so they cannot drift apart.
+    for feature, target_key, weight in (
+        ("energy", "target_energy", strategy.energy),
+        ("valence", "target_valence", strategy.valence),
+    ):
+        points, reason = _closeness_term(user_prefs, song, feature, target_key, weight)
+        if reason is not None:
+            score += points
+            reasons.append(reason)
 
     # 5. Acoustic preference - read the same column in opposite directions.
     if "likes_acoustic" in user_prefs and strategy.acoustic:
@@ -168,7 +196,6 @@ def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5,
         score, reasons = score_song(user_prefs, song, strategy)
         scored.append((song, score, "; ".join(reasons or ["no strong matches"])))
 
-    # sorted() returns a new list and leaves `songs` untouched; .sort() would
-    # reorder the caller's catalog in place. Ties break on id so runs repeat.
-    scored.sort(key=lambda item: (-item[1], item[0]["id"]))
-    return scored[:k]
+    # _top_k builds a new list via sorted(), so the caller's `songs` catalog is
+    # left untouched. Ties break on id so runs repeat.
+    return _top_k(scored, lambda item: item[1], lambda item: item[0]["id"], k)
