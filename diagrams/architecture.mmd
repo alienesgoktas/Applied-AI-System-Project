@@ -1,0 +1,28 @@
+%% System architecture — Music Recommender Simulation
+%% Source file (required). Preview at https://mermaid.live and export a PNG to assets/ if desired.
+flowchart TB
+    USER(["User taste profile<br/>genre · mood · target energy<br/>target valence · likes acoustic"])
+    OUT(["Top-k recommendations<br/>ranked, each with a plain-language 'why'"])
+
+    subgraph Data["Data layer"]
+        CSV[("data/songs.csv<br/>20-song catalog")]
+    end
+
+    subgraph Core["Core engine — src/recommender.py"]
+        LOAD["load_songs()<br/>parse rows · cast numeric fields"]
+        STRAT["ScoringStrategy (frozen weights)<br/>BALANCED · ENERGY_FIRST<br/>MOOD_BLIND · GENRE_PURIST"]
+        SCORE["score_song()<br/>genre + mood + energy<br/>+ valence + acoustic<br/>→ (score, reasons)"]
+        RANK["recommend_songs() / Recommender.recommend()<br/>sort by score desc · tie-break by id · take top-k"]
+    end
+
+    subgraph Interfaces["Interfaces"]
+        CLI["src/main.py<br/>CLI runner · explained output"]
+        TESTS["tests/test_recommender.py<br/>pytest suite"]
+    end
+
+    CSV --> LOAD --> SCORE
+    USER --> SCORE
+    STRAT -. injected weights .-> SCORE
+    SCORE --> RANK --> CLI --> OUT
+    SCORE -. unit-tested .-> TESTS
+    RANK -. unit-tested .-> TESTS
