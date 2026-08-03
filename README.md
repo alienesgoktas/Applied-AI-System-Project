@@ -147,8 +147,41 @@ only in that session. `.env` files and `logs/` are gitignored.
 ### Running the tests
 
 ```bash
-pytest        # 81 tests; no network, key, server, or SDK required
+pytest        # 84 tests; no network, key, server, or SDK required
 ```
+
+### Evaluation harness
+
+`eval.py` runs a fixed set of predefined queries through the full pipeline and prints a
+pass/fail + confidence summary. It is **offline by default** (deterministic — no LLM, key, or
+server needed), so anyone can reproduce the exact result; each case asserts only
+result-derivable properties (top genre, confidence bounds, whether the honesty note fires, a
+blocked genre's absence). It exits `0` iff every case passes.
+
+```bash
+python eval.py            # offline (deterministic, default)
+python eval.py --live     # use the configured LLM backend instead
+```
+
+```
+Music Recommender - evaluation harness (offline, 70 songs)
+
+ #  query                                  top pick               genre       conf strong  result
+----------------------------------------------------------------------------------------------------
+ 1  upbeat happy pop for a workout         Sunrise City           pop         0.95      5  PASS
+ 2  chill acoustic lofi to study           Library Rain           lofi        0.94      5  PASS
+ 3  aggressive loud metal                  Ashfall                metal       0.65      5  PASS
+ 4  smooth jazz for a rainy evening        Rush Hour Swing        jazz        0.65      5  PASS
+ 5  energetic house dance music            Midnight Loop          house       0.74      4  PASS
+ 6  melancholy bluegrass                   Front Porch Reel       bluegrass   0.53      0  PASS
+ 7  no pop, something calm and acoustic    Paper Cranes           classical   0.45      0  PASS
+----------------------------------------------------------------------------------------------------
+7/7 passed
+```
+
+Cases 6–7 are deliberate stress tests: niche taste (`melancholy bluegrass`) correctly reports
+**low** confidence with the honesty note, and `no pop` keeps pop out of the results — the harness
+verifies the reliability layer behaves, not just that songs come back.
 
 ---
 
