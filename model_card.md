@@ -69,7 +69,9 @@ added a valence preference to the user profile, which the starter did not have.
 
 ## 4. Data
 
-**Size:** 20 songs in `data/songs.csv`.
+**Size:** 20 songs in `data/songs.csv` for the original project. *(In the Module 4 upgrades the
+catalog was later expanded to **70** hand-built songs — several per genre — so niche taste has more
+depth and the score-cliff below is less severe than the original 20-song measurements show.)*
 
 **Started with:** 10 songs, provided with the assignment.
 
@@ -359,7 +361,7 @@ dislikes — see §6) still hold; the LLM does **not** fix them. New AI-specific
   a non-catalog song (guardrail) or read a secret (the LLM never sees the key; only retrieved
   song facts are in the prompt). The worst case is an odd AI summary, bounded by the shown
   deterministic reasons.
-- **Over-trust.** With only 20 songs and no fairness safeguards, this must not be used as a real
+- **Over-trust.** With only ~70 songs and no fairness safeguards, this must not be used as a real
   product recommender (see §2). The honesty note is a deliberate guard against over-trust.
 
 ## 12. What surprised me while testing reliability

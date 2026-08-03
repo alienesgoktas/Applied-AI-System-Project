@@ -51,7 +51,7 @@ The Mermaid source is [`diagrams/architecture.mmd`](diagrams/architecture.mmd).
 flowchart TB
     USER([User: plain-English request])
     OUT([Ranked songs + deterministic reasons + confidence + honesty note + AI summary])
-    CSV[("data/songs.csv (20-song catalog)")]
+    CSV[("data/songs.csv (70-song catalog)")]
 
     subgraph Backends["LLM backend — pluggable, local-first (src/backends.py)"]
         LOCAL["LocalServerBackend (POST /api/v1/chat)"]
@@ -154,17 +154,17 @@ pytest        # 50 tests; no network, key, server, or SDK required
 
 ## Sample Interactions
 
-**1. Niche taste, offline — the honesty layer at work.** *"sad folk songs"* has one real match
-in a 20-song catalog, and the system *says so* instead of pretending the rest are good:
+**1. Niche taste, offline — the honesty layer at work.** *"melancholy bluegrass"* has no real
+match in the catalog (bluegrass has no melancholy tracks), and the system *says so* instead of
+pretending the results are good:
 
 ```
-  You asked: sad folk songs   [offline]
-  Understood as: folk / (any) | energy 0.50 | valence 0.20 | acoustic
-  Confidence: 0.71 - Only 1 strong match found - everything below it is weak (chosen mostly by energy).
+  You asked: melancholy bluegrass   [offline]
+  Understood as: bluegrass / melancholy | energy 0.50 | valence 0.20 | produced
+  Confidence: 0.53 - No strong matches - results are weak (chosen mostly by energy).
 ====================================================================
-1. Winter Letters - Elin Sorby      Score: 4.61   [folk / melancholy]
-2. Long Way Home - Cassie Vaughn    Score: 2.52   [country / nostalgic]   <-- score cliff
-3. Library Rain - Paper Lanterns    Score: 2.44   [lofi / chill]
+1. Front Porch Reel - The Hollow Boys   Score: 3.44   [bluegrass / confident]  <-- genre-only
+2. Copperline - Redbird Holler          Score: 2.9x   [bluegrass / happy]
 ```
 
 **2. Live local LLM — grounded RAG.** *"chill acoustic music to study to"* → the local Gemma
@@ -215,6 +215,14 @@ explanation (`used_llm` becomes `False`). This is asserted by
 - **Content-based scoring (inherited).** Each song earns points for genre (exact/partial), mood,
   and closeness of energy/valence to the target, plus an acoustic term — max **6.5** under the
   balanced strategy. See [`model_card.md`](model_card.md) for the full recipe and evaluation.
+- **You control the algorithm** (what streaming apps don't let you do). The web app exposes
+  strategy presets + custom weight sliders (reusing the swappable `ScoringStrategy`), a
+  **dislikes** multiselect (also parsed from "no rock" in your request — a penalty term that
+  *explains* why a song dropped), and a **diversity cap** (max songs per artist, with backfill).
+  The CLI reads `RECOMMENDER_STRATEGY` / `RECOMMENDER_MAX_PER_ARTIST` env vars.
+- **Bigger catalog + save/share.** The catalog grew from the original 20 to **70** hand-built
+  songs (several per genre, so niche taste has real depth), and results export to a `.txt`
+  playlist / `.json` via a download button — client-side, still nothing persisted.
 
 **Dependencies & licensing.** The only new runtime dependency is **`anthropic`** (MIT license —
 verified at `https://pypi.org/pypi/anthropic/json`, 2026-08-02), used only on the optional BYOK

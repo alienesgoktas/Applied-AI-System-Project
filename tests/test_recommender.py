@@ -113,7 +113,7 @@ def test_exact_genre_beats_partial_beats_none():
 
 def test_load_songs_parses_numbers():
     songs = load_songs("data/songs.csv")
-    assert len(songs) == 20
+    assert len(songs) == 70
     assert isinstance(songs[0]["id"], int)
     assert isinstance(songs[0]["energy"], float)
 
@@ -152,17 +152,21 @@ def test_mood_blind_strategy_drops_the_mood_points():
 
 
 def test_strategies_can_produce_different_rankings():
-    """The Phase 4 experiment, as a test rather than a scratchpad hack."""
+    """Reweighting the strategy changes the ranking (re-derived for the 70-song catalog).
+
+    A folk fan who wants high energy exposes the genre-vs-energy tension: the
+    genre-weighted BALANCED keeps all-folk picks, while ENERGY_FIRST swaps a
+    low-energy folk track for a loud non-folk one.
+    """
     songs = load_songs("data/songs.csv")
-    prefs = {"favorite_genre": "pop", "favorite_mood": "happy",
-             "target_energy": 0.8, "target_valence": 0.7, "likes_acoustic": False}
+    prefs = {"favorite_genre": "folk", "favorite_mood": "melancholy", "target_energy": 0.9}
 
     balanced = [s["title"] for s, _, _ in recommend_songs(prefs, songs, 3, BALANCED)]
     energy_first = [s["title"] for s, _, _ in recommend_songs(prefs, songs, 3, ENERGY_FIRST)]
 
     assert balanced != energy_first
-    assert "Gym Hero" in balanced          # genre-weighted result
-    assert "Ocean Bus Route" in energy_first  # energy-weighted result
+    assert "Paper Boats" in balanced          # genre-weighted keeps a low-energy folk pick
+    assert "Overdrive" in energy_first        # energy-weighted pulls in a high-energy track
 
 
 def test_genre_purist_strategy_favors_genre_over_mood():

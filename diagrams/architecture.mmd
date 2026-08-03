@@ -5,7 +5,7 @@
 flowchart TB
     USER([User: plain-English request]):::io
     OUT([Ranked songs + deterministic reasons<br/>+ confidence + honesty note + AI summary + badge]):::io
-    CSV[("data/songs.csv<br/>20-song catalog")]:::data
+    CSV[("data/songs.csv<br/>70-song catalog")]:::data
     LOG[("logs/app.log")]:::data
 
     subgraph Backends["LLM backend — pluggable, local-first (src/backends.py)"]

@@ -19,3 +19,53 @@ id,title,artist,genre,mood,energy,tempo_bpm,valence,danceability,acousticness
 18,Sunday Curtains,Odalys,r&b,romantic,0.51,102,0.58,0.77,0.29
 19,Ocean Bus Route,Kito Lamar,afrobeats,happy,0.74,112,0.88,0.89,0.24
 20,Long Way Home,Cassie Vaughn,country,nostalgic,0.44,96,0.41,0.48,0.72
+21,Neon Boulevard,Sunset Arcade,pop,happy,0.80,120,0.86,0.81,0.15
+22,Paper Hearts,Cleo Rae,pop,romantic,0.62,104,0.74,0.70,0.28
+23,Overdrive,Max Pulse,pop,intense,0.90,134,0.72,0.85,0.08
+24,Rainy Window Seat,Paper Lanterns,lofi,relaxed,0.33,70,0.55,0.52,0.88
+25,Cassette Dreams,LoRoom,lofi,nostalgic,0.38,76,0.50,0.57,0.80
+26,Redline,Voltline,rock,intense,0.94,158,0.45,0.64,0.09
+27,Paper Tiger,Grey Harbor,rock,confident,0.83,140,0.60,0.68,0.20
+28,Slow Burn,Ash and Ember,rock,moody,0.66,118,0.38,0.55,0.33
+29,Tidal Glass,Orbit Bloom,ambient,relaxed,0.25,58,0.60,0.35,0.95
+30,Aurora Fields,Snowlark,ambient,chill,0.30,64,0.62,0.40,0.90
+31,Blue Note Alley,Slow Stereo,jazz,relaxed,0.40,92,0.68,0.56,0.85
+32,Velvet Hours,The Nightingales,jazz,romantic,0.45,100,0.63,0.60,0.80
+33,Rush Hour Swing,Brass Union,jazz,confident,0.58,128,0.70,0.72,0.55
+34,Chrome Sunset,Neon Echo,synthwave,euphoric,0.80,116,0.68,0.78,0.18
+35,Retrograde,Vector Pulse,synthwave,moody,0.72,108,0.44,0.70,0.20
+36,Neon Rain,Cassette Ghost,synthwave,nostalgic,0.68,112,0.52,0.66,0.25
+37,Paper Planes,Indigo Parade,indie pop,happy,0.72,120,0.79,0.80,0.38
+38,Golden Hour,Wildflower Ave,indie pop,romantic,0.60,110,0.75,0.72,0.45
+39,Backseat Summer,The Marigolds,indie pop,nostalgic,0.66,116,0.70,0.74,0.40
+40,City Lights Freestyle,Mara Vex,hip hop,confident,0.80,98,0.64,0.88,0.09
+41,Corner Store,Dee Marlo,hip hop,intense,0.85,100,0.55,0.84,0.07
+42,Late Checkout,Sable Grove,hip hop,moody,0.70,92,0.40,0.80,0.15
+43,Cedar Smoke,Elin Sorby,folk,nostalgic,0.34,88,0.35,0.33,0.90
+44,Harvest Moon Road,Junely,folk,melancholy,0.31,82,0.25,0.36,0.92
+45,Paper Boats,June Hollow,folk,relaxed,0.36,90,0.48,0.38,0.88
+46,Blacksteel,Hollow Reign,metal,intense,0.98,172,0.18,0.42,0.03
+47,Fault Line,Iron Verdict,metal,confident,0.93,160,0.30,0.50,0.06
+48,Ashfall,Grave Tide,metal,moody,0.88,150,0.22,0.45,0.05
+49,Nocturne in Glass,Yuki Tanabe,classical,melancholy,0.20,60,0.35,0.15,0.98
+50,Morning Adagio,Camerata Sol,classical,relaxed,0.24,68,0.55,0.18,0.96
+51,Winter Etude,Anton Reiss,classical,focused,0.28,72,0.45,0.20,0.95
+52,Warehouse Sunrise,Club Havoc,house,euphoric,0.90,126,0.90,0.94,0.05
+53,Deep End,Marlo Sound,house,confident,0.84,124,0.75,0.90,0.08
+54,Midnight Loop,Vela,house,intense,0.88,130,0.68,0.92,0.06
+55,Copperline,Redbird Holler,bluegrass,happy,0.85,150,0.83,0.66,0.88
+56,Front Porch Reel,The Hollow Boys,bluegrass,confident,0.80,144,0.72,0.60,0.85
+57,Slow Sunday,Odalys,r&b,relaxed,0.48,98,0.60,0.74,0.32
+58,Velvet Skin,Cyan Rae,r&b,romantic,0.52,100,0.64,0.78,0.28
+59,2AM Text,Juno Bell,r&b,moody,0.46,94,0.38,0.72,0.30
+60,Lagos Nights,Kito Lamar,afrobeats,euphoric,0.80,116,0.90,0.90,0.20
+61,Palm Wine,Ada Moon,afrobeats,happy,0.76,110,0.85,0.87,0.26
+62,Sunlight Drum,Tayo Blue,afrobeats,confident,0.78,114,0.80,0.88,0.22
+63,Dust and Denim,Cassie Vaughn,country,confident,0.55,100,0.58,0.52,0.68
+64,Two-Lane Heart,Wade Coleman,country,nostalgic,0.46,98,0.44,0.50,0.75
+65,Front Range Sunset,Harlan Pike,country,relaxed,0.42,92,0.50,0.46,0.78
+66,Glass Elevator,Sunset Arcade,pop,confident,0.78,122,0.70,0.80,0.16
+67,Undertow,Ash and Ember,rock,intense,0.90,150,0.42,0.60,0.12
+68,Paper Moon,The Nightingales,jazz,nostalgic,0.42,96,0.60,0.58,0.82
+69,Signal Fade,Vector Pulse,synthwave,chill,0.60,104,0.55,0.64,0.24
+70,Wildfire,Iron Verdict,metal,intense,0.95,166,0.25,0.48,0.05

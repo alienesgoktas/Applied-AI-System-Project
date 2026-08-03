@@ -11,6 +11,8 @@ advisory AI summary. Any API key you type stays in this browser session — it i
 never stored or logged.
 """
 
+import json
+
 import streamlit as st
 
 from src.backends import (
@@ -134,5 +136,27 @@ if go and query.strip():
     st.divider()
     st.markdown("**AI summary** *(advisory - the scoring reasons above are the record)*")
     st.info(result["explanation"])
+
+    # Save / share - client-side download only; nothing is persisted server-side.
+    lines = [f"Music Recommender - {result['query']}", ""]
+    for rank, (song, score, reasons) in enumerate(result["results"], 1):
+        lines.append(f"{rank}. {song['title']} - {song['artist']} "
+                     f"[{song['genre']}/{song['mood']}]  (score {score:.2f})")
+    export = {
+        "query": result["query"],
+        "profile": result["profile"],
+        "confidence": result["confidence"],
+        "explanation": result["explanation"],
+        "results": [
+            {"title": s["title"], "artist": s["artist"], "genre": s["genre"],
+             "mood": s["mood"], "score": score, "reasons": reasons}
+            for s, score, reasons in result["results"]
+        ],
+    }
+    col1, col2 = st.columns(2)
+    col1.download_button("Download playlist (.txt)", "\n".join(lines),
+                         file_name="playlist.txt", mime="text/plain")
+    col2.download_button("Download data (.json)", json.dumps(export, indent=2),
+                         file_name="recommendations.json", mime="application/json")
 elif go:
     st.warning("Type a request first.")
