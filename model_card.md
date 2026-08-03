@@ -423,3 +423,39 @@ Requests I ran by hand and judged (offline unless noted "local"):
 
 **7/7 criteria met.** The failure modes I designed for — hallucination, backend down, empty
 input — all degraded safely rather than crashing or misleading the user.
+
+## 15. Specialization (baseline vs specialized explanation)
+
+The explanation generator supports two prompt **styles**, selectable per call
+(`generate_explanation(..., style=...)`, `src/llm.py`):
+
+- **Baseline** (`EXPLAIN_SYSTEM_BASELINE`): a generic, loosely-constrained "write a short
+  recommendation" prompt.
+- **Specialized** (`EXPLAIN_SYSTEM_SPECIALIZED`, the production default): the same task
+  **plus** hard grounding ("recommend ONLY from the candidate songs"), an explicit tone
+  constraint (one sentence per pick, no marketing adjectives), and a **one-shot exemplar**
+  (few-shot specialization) showing the exact desired pick shape.
+
+`specialization_demo.py` runs the same query + same retrieved songs through both styles
+against a live backend and reports four measurable properties per output: whether the
+grounding guardrail held (`used_llm`), pick count, average words per pick, and marketing-
+adjective count.
+
+**Measured comparison (local `gemma4-12b-says-v2`).**
+
+> _Live capture pending — run `LLM_BACKEND=local python specialization_demo.py "upbeat pop
+> for a workout"` with the local server up; the numbers below are filled from that run._
+
+| Metric | Baseline | Specialized |
+|---|---|---|
+| Grounding guardrail held (`used_llm`) | _pending_ | _pending_ |
+| Picks returned | _pending_ | _pending_ |
+| Avg words per pick | _pending_ | _pending_ |
+| Marketing adjectives | _pending_ | _pending_ |
+
+The **expected** and design-intended difference: the specialized prompt yields shorter,
+grounded, adjective-free reasons that reliably pass the title guardrail, while the baseline
+tends toward longer, looser prose and is likelier to drift outside the candidate set (a
+guardrail rejection → `used_llm=False`). Offline (no backend) the two styles are identical
+by construction — both fall back to the deterministic explanation — which is why the
+contrast is a *live* measurement.

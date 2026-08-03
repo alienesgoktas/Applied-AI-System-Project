@@ -76,15 +76,42 @@ PROFILE_SYSTEM = (
     '"no rock", or [] if none).'
 )
 
-EXPLAIN_SYSTEM = (
+# Two explanation "styles" for the specialization A/B (SF-C). BASELINE is a generic,
+# loosely-constrained prompt; SPECIALIZED adds hard grounding, a one-sentence/no-marketing
+# tone constraint, and a one-shot exemplar (few-shot specialization).
+EXPLAIN_SYSTEM_BASELINE = (
+    "You are a music assistant. The user made a request and here are some candidate songs. "
+    "Write a short recommendation of the songs you think fit best. Respond as JSON: "
+    '{"summary": "...", "picks": [{"title": "...", "why": "..."}]}.'
+)
+
+EXPLAIN_SYSTEM_SPECIALIZED = (
     "You are a music recommendation assistant. Recommend songs to the user using "
     "ONLY the candidate songs provided — never mention a song that is not in the "
     "candidate list. Choose up to 3 and give a one-sentence reason for each, "
     "grounded in the song's genre, mood, and the scoring notes. You MAY use the "
     "genre context (factual background) to enrich a reason, but still recommend ONLY "
-    "from the candidate songs. Respond as JSON: "
-    '{"summary": "...", "picks": [{"title": "...", "why": "..."}]}.'
+    "from the candidate songs. Keep each reason to ONE sentence and avoid marketing "
+    "adjectives (no 'amazing', 'perfect', 'ultimate', 'best'). Respond as JSON: "
+    '{"summary": "...", "picks": [{"title": "...", "why": "..."}]}.\n'
+    'Example — for candidate "Library Rain" [lofi/chill], a good pick is '
+    '{"title": "Library Rain", "why": "A lofi, chill track with a high acoustic score, '
+    'matching your focus request."}'
 )
+
+# Back-compat alias: the specialized prompt is the production default.
+EXPLAIN_SYSTEM = EXPLAIN_SYSTEM_SPECIALIZED
+
+
+def _explain_system(style: str = "specialized") -> str:
+    """Select the explanation system prompt for the A/B style ('baseline'|'specialized').
+
+    A typo'd style is a loud error, not a silent fall-through to specialized — otherwise an
+    A/B run could compare specialized against specialized without anyone noticing.
+    """
+    if style not in ("baseline", "specialized"):
+        raise ValueError(f"unknown explanation style: {style!r}")
+    return EXPLAIN_SYSTEM_BASELINE if style == "baseline" else EXPLAIN_SYSTEM_SPECIALIZED
 
 # --- Offline keyword vocabulary ---------------------------------------------------
 
@@ -373,7 +400,8 @@ def _deterministic_explanation(retrieved, notes=None) -> str:
 
 
 def generate_explanation(query: str, retrieved, *, backend=None,
-                         notes: Optional[List[str]] = None) -> Tuple[str, bool]:
+                         notes: Optional[List[str]] = None,
+                         style: str = "specialized") -> Tuple[str, bool]:
     """Return (explanation_text, used_llm).
 
     Grounding guardrail (backend-agnostic): every recommended title must be in the
@@ -382,6 +410,7 @@ def generate_explanation(query: str, retrieved, *, backend=None,
     is the model-phrased "AI summary"; the caller always renders the deterministic
     scoring reasons from ``retrieved`` beside it.
     """
+    _explain_system(style)  # validate style loudly, independent of backend (raises on typo)
     if not retrieved:
         return "No songs matched your request.", False
 
@@ -389,7 +418,7 @@ def generate_explanation(query: str, retrieved, *, backend=None,
         try:
             # normalized title -> canonical title (we render the canonical form)
             allowed = {_norm(song["title"]): song["title"] for song, _s, _r in retrieved}
-            raw = backend.complete_json(EXPLAIN_SYSTEM, _explain_prompt(query, retrieved, notes), EXPLAIN_SCHEMA)
+            raw = backend.complete_json(_explain_system(style), _explain_prompt(query, retrieved, notes), EXPLAIN_SCHEMA)
             picks = raw.get("picks") if isinstance(raw, dict) else None
             if not isinstance(picks, list) or not picks:
                 raise ValueError("no picks returned")
