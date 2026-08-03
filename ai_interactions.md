@@ -310,3 +310,49 @@ confirming GENRE_PURIST no longer saturates.
 
 Test count went from 17 to 50.
 
+## Runtime Agentic Workflow (a decision chain in the system, `src/agent.py`)
+
+Distinct from the *coding* agent above (SF8, which made multi-step changes during
+development), this is a **runtime** agent inside the product. `agentic_recommend()` uses the
+existing pieces as tools — `parse_profile` (understand), `recommend_songs` (retrieve),
+`score_confidence` (evaluate) — and reasons across steps: if the results are strong it
+**accepts and stops**; if they are weak it **plans** the next relaxation from a fixed ladder
+(drop blocked genres → ignore mood → widen to a mood-blind strategy), applies it, and
+**retries**, keeping the best-confidence pass it has seen. The decision logic is rule-based
+over `strong_matches`/`confidence`, and parsing degrades offline, so the agent runs with no
+LLM and is fully unit-tested (`tests/test_agent.py`).
+
+**Reasoning trace** — the agent's intermediate steps for a deliberately hard request,
+captured offline (`python -m src.agent "upbeat pop, no pop"`):
+
+```
+Agent query: 'upbeat pop, no pop'   (backend offline)
+
+Reasoning trace:
+  step 1: initial retrieval
+          reason: first pass from the parsed profile
+          -> confidence 0.45, strong 0, top 'Warehouse Sunrise'
+  step 2: drop blocked genres
+          reason: weak (strong=0, conf=0.45); relaxing: drop blocked genres
+          -> confidence 0.45, strong 0, top 'Warehouse Sunrise'
+  step 3: widen strategy (mood-blind)
+          reason: weak (strong=0, conf=0.45); relaxing: widen strategy (mood-blind)
+          -> confidence 0.58, strong 5, top 'Warehouse Sunrise'
+
+Chosen pass: strategy=mood-blind, confidence=0.58 - 5 strong matches.
+  1. Warehouse Sunrise - Club Havoc [house/euphoric] (2.90)
+  2. Gym Hero - Max Pulse [pop/intense] (2.89)
+  3. Overdrive - Max Pulse [pop/intense] (2.88)
+  4. Basement Party - Club Havoc [house/euphoric] (2.86)
+  5. Midnight Loop - Vela [house/intense] (2.85)
+```
+
+The request is contradictory ("upbeat pop" but "no pop"), so the first pass is weak
+(confidence 0.45, zero strong matches). Rather than return that, the agent relaxes step by
+step and lands on a stronger pass (0.58, five strong matches) — and every decision is on the
+record. A live run (with the local server parsing the request) produces the same shape of
+trace; the offline capture above is deterministic and reproducible.
+
+Test count went from 81 to 103 across the four stretch features (eval harness, multi-source
+RAG, specialization A/B, and this agent).
+

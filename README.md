@@ -69,7 +69,7 @@ flowchart TB
     end
 
     subgraph Checks["Where AI output is checked"]
-        TESTS["pytest (81, mocked backend)"]
+        TESTS["pytest (103, mocked backend)"]
         HUMAN["Human evaluation (model_card.md)"]
     end
 
@@ -147,7 +147,7 @@ only in that session. `.env` files and `logs/` are gitignored.
 ### Running the tests
 
 ```bash
-pytest        # 84 tests; no network, key, server, or SDK required
+pytest        # 103 tests; no network, key, server, or SDK required
 ```
 
 ### Evaluation harness
@@ -277,6 +277,12 @@ explanation (`used_llm` becomes `False`). This is asserted by
   BEFORE (catalog only): Top match: Library Rain by Paper Lanterns (score 6.09). genre match: lofi (+2.0); mood match: chill (+1.5); ...
   AFTER  (+ genre source): ...acoustic sound (+0.86) [lofi: Downtempo, low-fidelity instrumental beats with soft textures and vinyl crackle; a go-to backdrop for studying and focus.]
   ```
+- **Runtime agentic workflow** (`src/agent.py`). Beyond the single-shot pipeline, `agentic_recommend()`
+  reasons across steps: retrieve → evaluate its own confidence → if weak, **decide** to relax a
+  constraint (drop blocked genres → ignore mood → widen strategy) and **retry**, keeping the
+  best-confidence pass and recording every decision in a trace. Rule-based and offline-testable; run
+  `python -m src.agent "upbeat pop, no pop"` to watch it relax a contradictory request into a stronger
+  result. A sample trace is in [`ai_interactions.md`](ai_interactions.md).
 
 **Dependencies & licensing.** The only new runtime dependency is **`anthropic`** (MIT license —
 verified at `https://pypi.org/pypi/anthropic/json`, 2026-08-02), used only on the optional BYOK
@@ -287,7 +293,7 @@ path. The local backend uses the Python standard library. `pytest` (MIT) and `st
 
 ## Testing & Reliability Summary
 
-**81 automated tests pass** (up from 17), and they are **fully reproducible** — the LLM is mocked
+**103 automated tests pass** (up from 17), and they are **fully reproducible** — the LLM is mocked
 via an injected fake backend, so no network, API key, running server, or even the `anthropic` SDK
 is required. The suite covers all four reliability angles the assignment asks for:
 
@@ -306,7 +312,7 @@ for the *fuzzy* edges (understanding a request, phrasing an explanation) while t
 core stays the source of truth — which is exactly why the reasons are always shown beside the
 AI summary.
 
-Summary line: **81/81 tests pass; the guardrail rejected 100% of injected hallucinations and the
+Summary line: **103/103 tests pass; the guardrail rejected 100% of injected hallucinations and the
 offline path required no external services; confidence averages high for common taste and
 correctly drops (with a warning) for niche taste like folk.**
 
