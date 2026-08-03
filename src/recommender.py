@@ -174,67 +174,96 @@ def _diverse_top_k(scored: List[Tuple[Dict, float, str]], k: int,
     return picked[:k]
 
 
-def score_song(user_prefs: Dict, song: Dict,
-               strategy: ScoringStrategy = BALANCED) -> Tuple[float, List[str]]:
+def _score_terms(user_prefs: Dict, song: Dict,
+                 strategy: ScoringStrategy) -> List[Tuple[str, float, str]]:
+    """Every scoring term that fires, as (chart_label, points, reason_string).
+
+    The single source for both score_song (the reason strings) and score_detail (the
+    chart points), so the two can never drift. Reason-string formats are preserved
+    exactly (genre/mood at .1f, numeric/acoustic at .2f).
     """
-    Scores a single song against user preferences.
-    Required by recommend_songs() and src/main.py
-    """
-    score = 0.0
-    reasons: List[str] = []
+    terms: List[Tuple[str, float, str]] = []
 
     # 1. Genre - the heaviest term. Exact match beats a shared-word match
     #    ("indie pop" for someone who asked for "pop").
     want_genre = str(user_prefs.get("favorite_genre", "")).lower()
     song_genre = str(song.get("genre", "")).lower()
     if want_genre and want_genre == song_genre and strategy.genre:
-        score += strategy.genre
-        reasons.append(f"genre match: {song_genre} (+{strategy.genre:.1f})")
+        terms.append(("genre", strategy.genre,
+                      f"genre match: {song_genre} (+{strategy.genre:.1f})"))
     elif (want_genre and strategy.genre_partial
           and set(want_genre.split()) & set(song_genre.split())):
-        score += strategy.genre_partial
-        reasons.append(f"partial genre match: {song_genre} (+{strategy.genre_partial:.1f})")
+        terms.append(("genre", strategy.genre_partial,
+                      f"partial genre match: {song_genre} (+{strategy.genre_partial:.1f})"))
 
     # 2. Mood.
     want_mood = str(user_prefs.get("favorite_mood", "")).lower()
     if want_mood and strategy.mood and want_mood == str(song.get("mood", "")).lower():
-        score += strategy.mood
-        reasons.append(f"mood match: {want_mood} (+{strategy.mood:.1f})")
+        terms.append(("mood", strategy.mood, f"mood match: {want_mood} (+{strategy.mood:.1f})"))
 
-    # 3-4. Numeric closeness terms. Each is scored by closeness to the user's
-    #      target, not by magnitude, so a user wanting calm music is not handed
-    #      the most intense track. Valence carries the smaller weight; it is the
-    #      only numeric not strongly correlated with energy, so it separates dark
-    #      from bright. Both go through one helper so they cannot drift apart.
+    # 3-4. Numeric closeness terms (energy, valence), scored by closeness to the
+    #      target - both through one helper so they cannot drift apart.
     for feature, target_key, weight in (
         ("energy", "target_energy", strategy.energy),
         ("valence", "target_valence", strategy.valence),
     ):
         points, reason = _closeness_term(user_prefs, song, feature, target_key, weight)
         if reason is not None:
-            score += points
-            reasons.append(reason)
+            terms.append((feature, points, reason))
 
-    # 5. Acoustic preference - read the same column in opposite directions.
+    # 5. Acoustic preference - read the acousticness column in the user's direction.
     if "likes_acoustic" in user_prefs and strategy.acoustic:
         acousticness = float(song["acousticness"])
         if user_prefs["likes_acoustic"]:
-            points = strategy.acoustic * acousticness
-            label = "acoustic"
+            points, label = strategy.acoustic * acousticness, "acoustic"
         else:
-            points = strategy.acoustic * (1.0 - acousticness)
-            label = "produced"
-        score += points
-        reasons.append(f"{label} sound (+{points:.2f})")
+            points, label = strategy.acoustic * (1.0 - acousticness), "produced"
+        terms.append(("acoustic", points, f"{label} sound (+{points:.2f})"))
 
-    # 6. Dislikes - a penalty when the song is in a user-blocked genre. Guarded on
-    #    the key, so callers that never set `blocked_genres` are unaffected.
+    # 6. Dislikes - a penalty when the song is a user-blocked genre. Guarded on the
+    #    key, so callers that never set `blocked_genres` are unaffected.
     blocked = user_prefs.get("blocked_genres") or []
     if blocked and strategy.dislike and song_genre in {str(g).lower() for g in blocked}:
-        score -= strategy.dislike
-        reasons.append(f"blocked genre: {song_genre} (-{strategy.dislike:.1f})")
+        terms.append(("blocked", -strategy.dislike,
+                      f"blocked genre: {song_genre} (-{strategy.dislike:.1f})"))
 
-    return round(score, 2), reasons
+    return terms
+
+
+def _total(terms: List[Tuple[str, float, str]]) -> float:
+    """Naive left-fold sum of the term points, shared by score_song/score_detail.
+
+    Deliberately NOT the built-in ``sum()``: on Python 3.12+ ``sum()`` uses
+    compensated (Neumaier) summation, which differs from the original left-fold
+    accumulation by up to a cent — this keeps scores byte-identical to that.
+    """
+    total = 0.0
+    for _label, points, _reason in terms:
+        total += points
+    return total
+
+
+def score_song(user_prefs: Dict, song: Dict,
+               strategy: ScoringStrategy = BALANCED) -> Tuple[float, List[str]]:
+    """
+    Scores a single song against user preferences.
+    Required by recommend_songs() and src/main.py
+    """
+    terms = _score_terms(user_prefs, song, strategy)
+    score = round(_total(terms), 2)
+    return score, [reason for _label, _points, reason in terms]
+
+
+def score_detail(user_prefs: Dict, song: Dict,
+                 strategy: ScoringStrategy = BALANCED) -> Tuple[float, List[Tuple[str, float]]]:
+    """Same score as score_song, plus the per-term (label, points) breakdown for charts.
+
+    Shares `_score_terms` with score_song, so the charted points always equal the
+    score the reasons explain.
+    """
+    terms = _score_terms(user_prefs, song, strategy)
+    score = round(_total(terms), 2)
+    return score, [(label, points) for label, points, _reason in terms]
 
 
 def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5,

@@ -132,6 +132,13 @@ if go and query.strip():
             for reason in reasons.split("; "):
                 if reason.strip():
                     st.caption(f"• {reason}")
+            bd = result["breakdowns"][rank - 1]
+            if bd:
+                st.bar_chart(
+                    {"term": [label for label, _ in bd],
+                     "points": [round(pts, 2) for _, pts in bd]},
+                    x="term", y="points", horizontal=True, height=160,
+                )
 
     st.divider()
     st.markdown("**AI summary** *(advisory - the scoring reasons above are the record)*")

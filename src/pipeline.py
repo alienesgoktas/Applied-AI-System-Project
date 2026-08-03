@@ -15,7 +15,7 @@ from typing import Dict, List, Optional
 
 from src.confidence import score_confidence
 from src.llm import generate_explanation, parse_profile
-from src.recommender import BALANCED, ScoringStrategy, recommend_songs
+from src.recommender import BALANCED, ScoringStrategy, recommend_songs, score_detail
 
 
 def backend_label(result: Dict) -> str:
@@ -84,6 +84,7 @@ def recommend_from_query(
     log.info("profile_source=%s profile=%s", profile_source, profile)
 
     results = recommend_songs(profile, songs, k=k, strategy=strategy, max_per_artist=max_per_artist)
+    breakdowns = [score_detail(profile, song, strategy)[1] for song, _score, _reason in results]
     conf = score_confidence(results, strategy)
     log.info(
         "results=%d confidence=%s strong_matches=%d",
@@ -100,6 +101,7 @@ def recommend_from_query(
         "profile": profile,
         "profile_source": profile_source,
         "results": results,
+        "breakdowns": breakdowns,
         "confidence": conf,
         "explanation": explanation,
         "used_llm": used_llm,
