@@ -351,6 +351,22 @@ dislikes — see §6) still hold; the LLM does **not** fix them. New AI-specific
 - **Inherited model bias.** The LLM carries its training biases (Western/English-centric),
   which can shape how it interprets an ambiguous request.
 
+**Multi-source retrieval (RAG second source).** Retrieval is not limited to the song
+catalog. A curated genre-knowledge source (`data/genre_notes.csv`, one factual blurb per
+catalog genre) is retrieved by the recommended songs' genres and fed to the generator as
+grounded background — so the explanation can cite *what a genre is*, not only the per-song
+scores. The title guardrail is unchanged (the model still recommends only from the retrieved
+candidates), and the offline path uses the same notes, so the enrichment is deterministic.
+Before vs after, offline, for *"chill acoustic lofi to study"*:
+
+- **Before (catalog only):** `Top match: Library Rain ... acoustic sound (+0.86)`
+- **After (+ genre source):** `... acoustic sound (+0.86) [lofi: Downtempo, low-fidelity
+  instrumental beats with soft textures and vinyl crackle; a go-to backdrop for studying and
+  focus.]`
+
+The second source adds *context* (why the genre fits the request) without loosening the
+grounding that keeps recommendations honest.
+
 ## 11. Could this be misused, and how would I prevent it?
 
 - **Cost/key abuse (BYOK).** A public deploy could run prompts on someone's API key, or a key

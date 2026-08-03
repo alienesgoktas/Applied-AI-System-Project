@@ -9,13 +9,38 @@ degrade to deterministic paths, so the returned result is always well-formed.
 
 from __future__ import annotations
 
+import csv
 import logging
 import os
 from typing import Dict, List, Optional
 
 from src.confidence import score_confidence
 from src.llm import generate_explanation, parse_profile
-from src.recommender import BALANCED, ScoringStrategy, recommend_songs, score_detail
+from src.recommender import (
+    BALANCED,
+    ScoringStrategy,
+    load_genre_notes,
+    recommend_songs,
+    retrieve_notes,
+    score_detail,
+)
+
+_GENRE_NOTES_PATH = "data/genre_notes.csv"
+_genre_notes_cache: Optional[Dict[str, str]] = None
+
+
+def _genre_notes() -> Dict[str, str]:
+    """Lazy-load the RAG second source once; degrade to {} if the file is absent OR
+    malformed. The notes are pure enrichment, so a bad/edited-away file must never crash
+    a recommendation — a missing column (KeyError), bad CSV (csv.Error), or non-UTF-8
+    bytes (UnicodeDecodeError) all fall back to no notes, same as a missing file."""
+    global _genre_notes_cache
+    if _genre_notes_cache is None:
+        try:
+            _genre_notes_cache = load_genre_notes(_GENRE_NOTES_PATH)
+        except (OSError, KeyError, csv.Error, UnicodeDecodeError, ValueError):
+            _genre_notes_cache = {}
+    return _genre_notes_cache
 
 
 def backend_label(result: Dict) -> str:
@@ -79,10 +104,12 @@ def recommend_for_profile(
     results = recommend_songs(profile, songs, k=k, strategy=strategy, max_per_artist=max_per_artist)
     breakdowns = [score_detail(profile, song, strategy)[1] for song, _score, _reason in results]
     conf = score_confidence(results, strategy)
-    explanation, used_llm = generate_explanation(query, results, backend=backend)
+    # RAG second source: genre-knowledge notes for the retrieved genres, fed to the generator.
+    notes = retrieve_notes(results, _genre_notes())
+    explanation, used_llm = generate_explanation(query, results, backend=backend, notes=notes)
     log.info(
-        "for_profile query=%r source=%s results=%d confidence=%s used_llm=%s",
-        query, profile_source, len(results), conf["confidence"], used_llm,
+        "for_profile query=%r source=%s results=%d confidence=%s used_llm=%s notes=%d",
+        query, profile_source, len(results), conf["confidence"], used_llm, len(notes),
     )
     return {
         "query": query,
@@ -91,6 +118,7 @@ def recommend_for_profile(
         "results": results,
         "breakdowns": breakdowns,
         "confidence": conf,
+        "notes": notes,
         "explanation": explanation,
         "used_llm": used_llm,
         "backend": backend_name,

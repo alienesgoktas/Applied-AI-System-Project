@@ -113,6 +113,35 @@ def load_songs(csv_path: str) -> List[Dict]:
     return songs
 
 
+def load_genre_notes(csv_path: str) -> Dict[str, str]:
+    """Load the genre-knowledge source (the RAG second source): ``{genre_lower: note}``.
+
+    Mirrors ``load_songs`` (stdlib csv, fail-fast). Keys are lowercased so lookups against
+    ``song["genre"]`` (already lowercase in the catalog) match multi-word / ``&`` genres
+    like ``"hip hop"`` and ``"r&b"`` exactly.
+    """
+    notes: Dict[str, str] = {}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        for row in csv.DictReader(f):
+            notes[row["genre"].strip().lower()] = row["note"].strip()
+    return notes
+
+
+def retrieve_notes(retrieved: List[Tuple[Dict, float, str]],
+                   notes: Dict[str, str]) -> List[str]:
+    """Second retrieval pass: the genre notes for the retrieved songs' distinct genres,
+    in first-appearance order (so ``[0]`` is the top pick's genre). Returns ``"genre: note"``
+    lines; genres with no note row are skipped."""
+    out: List[str] = []
+    seen = set()
+    for song, _score, _reason in retrieved:
+        g = str(song.get("genre", "")).strip().lower()
+        if g and g not in seen and g in notes:
+            seen.add(g)
+            out.append(f"{g}: {notes[g]}")
+    return out
+
+
 def _closeness(a: float, b: float) -> float:
     """Returns 1.0 when two 0-1 values match, falling to 0.0 as they diverge."""
     return 1.0 - abs(a - b)

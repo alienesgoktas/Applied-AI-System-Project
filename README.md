@@ -266,6 +266,17 @@ explanation (`used_llm` becomes `False`). This is asserted by
   favorite). A `#N` reference is resolved deterministically *before* any LLM call, so the per-song
   👍 / 👎 buttons behave identically on every backend. State lives in ephemeral `st.session_state`
   — nothing is persisted to disk (no accounts, no database).
+- **Multi-source retrieval (RAG).** Retrieval draws on **two** sources, not one: (1) the song
+  catalog, scored and ranked; (2) a curated genre-knowledge source (`data/genre_notes.csv`, one
+  factual blurb per catalog genre). `retrieve_notes()` fetches the notes for the retrieved songs'
+  genres and feeds them to the generator as grounded background — the title guardrail is unchanged,
+  so the model still recommends only from the candidate songs but can *explain* them with genre
+  facts. The offline path uses the same notes, so it stays deterministic and reproducible.
+
+  ```
+  BEFORE (catalog only): Top match: Library Rain by Paper Lanterns (score 6.09). genre match: lofi (+2.0); mood match: chill (+1.5); ...
+  AFTER  (+ genre source): ...acoustic sound (+0.86) [lofi: Downtempo, low-fidelity instrumental beats with soft textures and vinyl crackle; a go-to backdrop for studying and focus.]
+  ```
 
 **Dependencies & licensing.** The only new runtime dependency is **`anthropic`** (MIT license —
 verified at `https://pypi.org/pypi/anthropic/json`, 2026-08-02), used only on the optional BYOK

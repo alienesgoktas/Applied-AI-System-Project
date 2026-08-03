@@ -80,7 +80,9 @@ EXPLAIN_SYSTEM = (
     "You are a music recommendation assistant. Recommend songs to the user using "
     "ONLY the candidate songs provided — never mention a song that is not in the "
     "candidate list. Choose up to 3 and give a one-sentence reason for each, "
-    "grounded in the song's genre, mood, and the scoring notes. Respond as JSON: "
+    "grounded in the song's genre, mood, and the scoring notes. You MAY use the "
+    "genre context (factual background) to enrich a reason, but still recommend ONLY "
+    "from the candidate songs. Respond as JSON: "
     '{"summary": "...", "picks": [{"title": "...", "why": "..."}]}.'
 )
 
@@ -342,28 +344,36 @@ def refine_profile(prev_profile: Dict, text: str, songs: List[Dict], *,
 
 # --- Grounded explanation ---------------------------------------------------------
 
-def _explain_prompt(query: str, retrieved) -> str:
+def _explain_prompt(query: str, retrieved, notes=None) -> str:
     lines = [f'User request: "{query}"', "", "Candidate songs (recommend ONLY from these):"]
     for song, _score, reasons in retrieved:
         lines.append(
             f'- "{song["title"]}" by {song["artist"]} '
             f'[{song.get("genre", "?")}/{song.get("mood", "?")}] — {reasons}'
         )
+    if notes:  # second retrieval source: factual genre background (not song candidates)
+        lines += ["", "Genre context (factual background you MAY use to enrich reasons):"]
+        lines += [f"- {n}" for n in notes]
     return "\n".join(lines)
 
 
-def _deterministic_explanation(retrieved) -> str:
-    """A grounded summary built directly from the top result's scoring reasons."""
+def _deterministic_explanation(retrieved, notes=None) -> str:
+    """A grounded summary built directly from the top result's scoring reasons, optionally
+    enriched with the top pick's genre note (the RAG second source)."""
     if not retrieved:
         return "No songs matched your request."
     song, score, reasons = retrieved[0]
-    return (
+    text = (
         f"Top match: {song['title']} by {song['artist']} "
         f"(score {score:.2f}). {reasons}"
     )
+    if notes:  # notes[0] is the top pick's genre note (retrieve_notes preserves order)
+        text += f" [{notes[0]}]"
+    return text
 
 
-def generate_explanation(query: str, retrieved, *, backend=None) -> Tuple[str, bool]:
+def generate_explanation(query: str, retrieved, *, backend=None,
+                         notes: Optional[List[str]] = None) -> Tuple[str, bool]:
     """Return (explanation_text, used_llm).
 
     Grounding guardrail (backend-agnostic): every recommended title must be in the
@@ -379,7 +389,7 @@ def generate_explanation(query: str, retrieved, *, backend=None) -> Tuple[str, b
         try:
             # normalized title -> canonical title (we render the canonical form)
             allowed = {_norm(song["title"]): song["title"] for song, _s, _r in retrieved}
-            raw = backend.complete_json(EXPLAIN_SYSTEM, _explain_prompt(query, retrieved), EXPLAIN_SCHEMA)
+            raw = backend.complete_json(EXPLAIN_SYSTEM, _explain_prompt(query, retrieved, notes), EXPLAIN_SCHEMA)
             picks = raw.get("picks") if isinstance(raw, dict) else None
             if not isinstance(picks, list) or not picks:
                 raise ValueError("no picks returned")
@@ -400,4 +410,4 @@ def generate_explanation(query: str, retrieved, *, backend=None) -> Tuple[str, b
             logger.warning(
                 "LLM explanation rejected/failed (%s); using deterministic explanation", exc
             )
-    return _deterministic_explanation(retrieved), False
+    return _deterministic_explanation(retrieved, notes), False
