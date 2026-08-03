@@ -374,7 +374,7 @@ dislikes — see §6) still hold; the LLM does **not** fix them. New AI-specific
   constraining picks to the retrieved set — and showing the real reasons — was the line between
   "trustworthy" and "merely plausible."
 - **Reliability came from the architecture, not the model.** Dependency-injecting the backend
-  made the whole system testable and reproducible at zero cost (50 mocked tests, no key/server).
+  made the whole system testable and reproducible at zero cost (81 mocked tests, no key/server).
 
 ## 13. Collaboration with AI
 

@@ -69,7 +69,7 @@ flowchart TB
     end
 
     subgraph Checks["Where AI output is checked"]
-        TESTS["pytest (50, mocked backend)"]
+        TESTS["pytest (81, mocked backend)"]
         HUMAN["Human evaluation (model_card.md)"]
     end
 
@@ -147,7 +147,7 @@ only in that session. `.env` files and `logs/` are gitignored.
 ### Running the tests
 
 ```bash
-pytest        # 50 tests; no network, key, server, or SDK required
+pytest        # 81 tests; no network, key, server, or SDK required
 ```
 
 ---
@@ -223,6 +223,16 @@ explanation (`used_llm` becomes `False`). This is asserted by
 - **Bigger catalog + save/share.** The catalog grew from the original 20 to **70** hand-built
   songs (several per genre, so niche taste has real depth), and results export to a `.txt`
   playlist / `.json` via a download button — client-side, still nothing persisted.
+- **Visual explainability — you see *how much* each term counted.** Scoring is refactored around
+  a single `score_detail()` that returns `(label, points)` per term; the reasons string is
+  derived from it (one source, no drift), and the web app renders a per-song bar chart of the
+  contributions beside the reasons. A test asserts the term points sum to the score.
+- **Conversational refinement — you steer, multi-turn.** `refine_profile()` applies a follow-up
+  ("make it calmer", "no pop", "more like #2") to the current profile: the LLM returns an updated
+  profile, with a deterministic offline fallback (energy/valence ±0.2, block a genre, switch
+  favorite). A `#N` reference is resolved deterministically *before* any LLM call, so the per-song
+  👍 / 👎 buttons behave identically on every backend. State lives in ephemeral `st.session_state`
+  — nothing is persisted to disk (no accounts, no database).
 
 **Dependencies & licensing.** The only new runtime dependency is **`anthropic`** (MIT license —
 verified at `https://pypi.org/pypi/anthropic/json`, 2026-08-02), used only on the optional BYOK
@@ -233,13 +243,13 @@ path. The local backend uses the Python standard library. `pytest` (MIT) and `st
 
 ## Testing & Reliability Summary
 
-**50 automated tests pass** (up from 17), and they are **fully reproducible** — the LLM is mocked
+**81 automated tests pass** (up from 17), and they are **fully reproducible** — the LLM is mocked
 via an injected fake backend, so no network, API key, running server, or even the `anthropic` SDK
 is required. The suite covers all four reliability angles the assignment asks for:
 
 | Reliability method | Where |
 |---|---|
-| Automated tests | `tests/test_{backends,confidence,llm,pipeline}.py` — guardrail rejection, offline fallback, JSON-extraction edge cases, empty-input guards |
+| Automated tests | `tests/test_{backends,confidence,llm,pipeline,control,breakdown,refine}.py` — guardrail rejection, offline fallback, JSON-extraction edge cases, empty-input guards, the control knobs (weights/dislikes/diversity cap), score-breakdown sums, and refinement deltas |
 | Confidence scoring | `src/confidence.py` — strategy-aware confidence + honesty note |
 | Logging & guardrails | `src/pipeline.py` logs every step to `logs/app.log`; the grounding guardrail + graceful degradation |
 | Human evaluation | Parseable table in [`model_card.md`](model_card.md) |
@@ -252,7 +262,7 @@ for the *fuzzy* edges (understanding a request, phrasing an explanation) while t
 core stays the source of truth — which is exactly why the reasons are always shown beside the
 AI summary.
 
-Summary line: **50/50 tests pass; the guardrail rejected 100% of injected hallucinations and the
+Summary line: **81/81 tests pass; the guardrail rejected 100% of injected hallucinations and the
 offline path required no external services; confidence averages high for common taste and
 correctly drops (with a warning) for niche taste like folk.**
 
