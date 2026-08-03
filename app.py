@@ -21,7 +21,7 @@ from src.backends import (
     LocalServerBackend,
 )
 from src.pipeline import backend_label, recommend_from_query
-from src.recommender import load_songs
+from src.recommender import BALANCED, STRATEGIES, ScoringStrategy, load_songs
 
 CATALOG = "data/songs.csv"
 
@@ -71,13 +71,38 @@ with st.sidebar:
     st.divider()
     k = st.slider("How many recommendations?", 1, 10, 5)
 
+    st.subheader("Scoring controls")
+    _PRESETS = {"Balanced": "balanced", "Energy-first": "energy-first",
+                "Mood-blind": "mood-blind", "Genre-purist": "genre-purist"}
+    preset = st.selectbox("Strategy", [*_PRESETS, "Custom"],
+                          help="How the recommender weighs each signal.")
+    if preset == "Custom":
+        strategy = ScoringStrategy(
+            "custom",
+            genre=st.slider("Genre weight", 0.0, 4.0, BALANCED.genre, 0.5),
+            genre_partial=st.slider("Partial-genre weight", 0.0, 4.0, BALANCED.genre_partial, 0.5),
+            mood=st.slider("Mood weight", 0.0, 4.0, BALANCED.mood, 0.5),
+            energy=st.slider("Energy weight", 0.0, 4.0, BALANCED.energy, 0.5),
+            valence=st.slider("Valence weight", 0.0, 4.0, BALANCED.valence, 0.5),
+            acoustic=st.slider("Acoustic weight", 0.0, 4.0, BALANCED.acoustic, 0.5),
+        )
+    else:
+        strategy = STRATEGIES[_PRESETS[preset]]
+
+    all_genres = sorted({s["genre"] for s in songs})
+    blocked_genres = st.multiselect("Block genres (dislikes)", all_genres)
+    max_per_artist = st.slider("Max songs per artist (0 = no cap)", 0, 5, 0) or None
+
 query = st.text_input("Your request", placeholder="e.g. chill acoustic music to study to")
 go = st.button("Recommend", type="primary")
 
 if go and query.strip():
     backend = _build_backend(choice, cfg)
     with st.spinner("Thinking..."):
-        result = recommend_from_query(query.strip(), songs, k=k, backend=backend)
+        result = recommend_from_query(
+            query.strip(), songs, k=k, backend=backend, strategy=strategy,
+            blocked_genres=blocked_genres or None, max_per_artist=max_per_artist,
+        )
 
     badge = backend_label(result)
 

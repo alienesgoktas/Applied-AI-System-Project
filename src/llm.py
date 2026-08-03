@@ -17,6 +17,7 @@ of — the deterministic scoring reasons the caller renders from ``recommend_son
 from __future__ import annotations
 
 import logging
+import re
 from typing import Dict, List, Set, Tuple
 
 logger = logging.getLogger("recommender.llm")
@@ -31,6 +32,7 @@ PROFILE_SCHEMA = {
         "target_energy": {"type": "number"},
         "target_valence": {"type": "number"},
         "likes_acoustic": {"type": "boolean"},
+        "blocked_genres": {"type": "array", "items": {"type": "string"}},
     },
     "required": [
         "favorite_genre",
@@ -38,6 +40,7 @@ PROFILE_SCHEMA = {
         "target_energy",
         "target_valence",
         "likes_acoustic",
+        "blocked_genres",
     ],
     "additionalProperties": False,
 }
@@ -68,7 +71,9 @@ PROFILE_SYSTEM = (
     "Known genres: {genres}. Known moods: {moods}. Respond as JSON with keys: "
     'favorite_genre (one of the known genres, or ""), favorite_mood (one of the '
     'known moods, or ""), target_energy (0.0-1.0, how energetic), target_valence '
-    "(0.0-1.0, how upbeat/positive), likes_acoustic (true/false)."
+    "(0.0-1.0, how upbeat/positive), likes_acoustic (true/false), "
+    'blocked_genres (a list of known genres the listener wants to avoid, e.g. from '
+    '"no rock", or [] if none).'
 )
 
 EXPLAIN_SYSTEM = (
@@ -114,6 +119,15 @@ def _norm(text: str) -> str:
 
 # --- Profile parsing --------------------------------------------------------------
 
+def _as_str_list(value) -> List[str]:
+    """Coerce an LLM value (list, single string, or junk) into a list of strings."""
+    if isinstance(value, str):
+        return [value] if value.strip() else []
+    if isinstance(value, list):
+        return [str(v) for v in value if str(v).strip()]
+    return []
+
+
 def _coerce_profile(raw: Dict) -> Dict:
     """Clamp/normalize an LLM-returned profile into the user_prefs dict shape."""
     if not isinstance(raw, dict):
@@ -124,6 +138,7 @@ def _coerce_profile(raw: Dict) -> Dict:
         "target_energy": _clamp01(raw.get("target_energy")),
         "target_valence": _clamp01(raw.get("target_valence")),
         "likes_acoustic": bool(raw.get("likes_acoustic", False)),
+        "blocked_genres": sorted({_norm(g) for g in _as_str_list(raw.get("blocked_genres"))}),
     }
 
 
@@ -161,12 +176,24 @@ def _keyword_profile(query: str, songs: List[Dict]) -> Dict:
     else:
         likes_acoustic = False
 
+    # Dislikes: a negation word immediately followed by a known genre PHRASE
+    # ("no rock", "no hip hop"). Whitespace-boundary matching on a
+    # punctuation-normalized query, so multi-word genres are blockable and
+    # "piano house" does NOT read as "no house".
+    neg = ("no", "not", "without", "avoid", "hate", "hates", "except", "skip")
+    q_clean = " " + re.sub(r"[^a-z0-9&]+", " ", q).strip() + " "
+    blocked = sorted(
+        g for g in genres
+        if any(f" {nw} {g} " in q_clean for nw in neg)
+    )
+
     return {
-        "favorite_genre": _first_present(genres),
+        "favorite_genre": _first_present(genres - set(blocked)),
         "favorite_mood": _first_present(moods),
         "target_energy": energy,
         "target_valence": valence,
         "likes_acoustic": likes_acoustic,
+        "blocked_genres": blocked,
     }
 
 

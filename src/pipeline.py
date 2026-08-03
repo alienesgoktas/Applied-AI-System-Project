@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from src.confidence import score_confidence
 from src.llm import generate_explanation, parse_profile
@@ -64,6 +64,8 @@ def recommend_from_query(
     *,
     backend=None,
     strategy: ScoringStrategy = BALANCED,
+    blocked_genres: Optional[List[str]] = None,
+    max_per_artist: Optional[int] = None,
 ) -> Dict:
     """Run the full RAG pipeline and return a structured result dict.
 
@@ -76,9 +78,12 @@ def recommend_from_query(
     log.info("query=%r backend=%s k=%d strategy=%s", query, backend_name, k, strategy.name)
 
     profile, profile_source = parse_profile(query, songs, backend=backend)
+    if blocked_genres:  # merge UI-selected blocks with any the parser found
+        merged = set(profile.get("blocked_genres") or []) | {str(g).lower() for g in blocked_genres}
+        profile = {**profile, "blocked_genres": sorted(merged)}
     log.info("profile_source=%s profile=%s", profile_source, profile)
 
-    results = recommend_songs(profile, songs, k=k, strategy=strategy)
+    results = recommend_songs(profile, songs, k=k, strategy=strategy, max_per_artist=max_per_artist)
     conf = score_confidence(results, strategy)
     log.info(
         "results=%d confidence=%s strong_matches=%d",

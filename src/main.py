@@ -12,14 +12,25 @@ Usage:
     python -m src.main            # prompts interactively
 """
 
+import os
 import sys
 
 from src.backends import select_backend
 from src.pipeline import backend_label, recommend_from_query
-from src.recommender import load_songs
+from src.recommender import load_songs, strategy_from_name
 
 CATALOG = "data/songs.csv"
 DEMO_QUERY = "upbeat happy pop for a workout"
+
+
+def _env_int(name: str):
+    """Parse an optional positive int from an env var, else None."""
+    raw = os.getenv(name)
+    try:
+        value = int(raw) if raw else None
+    except ValueError:
+        return None
+    return value if value and value > 0 else None
 
 
 def _print_result(result: dict) -> None:
@@ -65,7 +76,11 @@ def main() -> None:
         print(f"(no request given — using demo: {query!r})\n")
 
     backend = select_backend()
-    result = recommend_from_query(query, songs, k=5, backend=backend)
+    strategy = strategy_from_name(os.getenv("RECOMMENDER_STRATEGY"))
+    result = recommend_from_query(
+        query, songs, k=5, backend=backend, strategy=strategy,
+        max_per_artist=_env_int("RECOMMENDER_MAX_PER_ARTIST"),
+    )
     _print_result(result)
 
 

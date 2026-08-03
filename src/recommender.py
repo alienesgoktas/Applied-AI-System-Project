@@ -19,6 +19,7 @@ class ScoringStrategy:
     energy: float = 1.5         # scaled by closeness to the user's target
     valence: float = 0.5        # scaled by closeness to the user's target
     acoustic: float = 1.0       # scaled by acousticness, or its inverse
+    dislike: float = 3.0        # penalty subtracted when a song is a blocked genre
 
     def max_score(self) -> float:
         """Highest total a song can earn under this strategy (every term maxed)."""
@@ -34,6 +35,14 @@ BALANCED = ScoringStrategy()
 ENERGY_FIRST = ScoringStrategy("energy-first", genre=1.0, genre_partial=0.5, energy=3.0)
 MOOD_BLIND = ScoringStrategy("mood-blind", mood=0.0)
 GENRE_PURIST = ScoringStrategy("genre-purist", genre=4.0, genre_partial=2.0)
+
+# Presets addressable by name (e.g. from a UI dropdown or an env var).
+STRATEGIES = {s.name: s for s in (BALANCED, ENERGY_FIRST, MOOD_BLIND, GENRE_PURIST)}
+
+
+def strategy_from_name(name, default: ScoringStrategy = BALANCED) -> ScoringStrategy:
+    """Resolve a preset name (case-insensitive) to a ScoringStrategy, else `default`."""
+    return STRATEGIES.get(str(name).strip().lower(), default) if name else default
 
 
 @dataclass
@@ -137,6 +146,34 @@ def _top_k(items: List[T], score_of: Callable[[T], float],
     return sorted(items, key=lambda item: (-score_of(item), id_of(item)))[:k]
 
 
+def _diverse_top_k(scored: List[Tuple[Dict, float, str]], k: int,
+                   max_per_artist: int) -> List[Tuple[Dict, float, str]]:
+    """Top-k with at most `max_per_artist` songs per artist, best-first.
+
+    Backfills from the deferred (over-cap) pool if the cap can't fill k, so the
+    result still has k items whenever the catalog is large enough — de-bubbling
+    the top slots without ever shrinking the list below the plain top-k would.
+    """
+    ranked = sorted(scored, key=lambda item: (-item[1], item[0]["id"]))
+    picked: List[Tuple[Dict, float, str]] = []
+    deferred: List[Tuple[Dict, float, str]] = []
+    counts: Dict[str, int] = {}
+    for item in ranked:
+        artist = str(item[0].get("artist", ""))
+        if counts.get(artist, 0) < max_per_artist:
+            picked.append(item)
+            counts[artist] = counts.get(artist, 0) + 1
+        else:
+            deferred.append(item)
+        if len(picked) == k:
+            return picked
+    for item in deferred:  # backfill in rank order
+        if len(picked) >= k:
+            break
+        picked.append(item)
+    return picked[:k]
+
+
 def score_song(user_prefs: Dict, song: Dict,
                strategy: ScoringStrategy = BALANCED) -> Tuple[float, List[str]]:
     """
@@ -190,20 +227,33 @@ def score_song(user_prefs: Dict, song: Dict,
         score += points
         reasons.append(f"{label} sound (+{points:.2f})")
 
+    # 6. Dislikes - a penalty when the song is in a user-blocked genre. Guarded on
+    #    the key, so callers that never set `blocked_genres` are unaffected.
+    blocked = user_prefs.get("blocked_genres") or []
+    if blocked and strategy.dislike and song_genre in {str(g).lower() for g in blocked}:
+        score -= strategy.dislike
+        reasons.append(f"blocked genre: {song_genre} (-{strategy.dislike:.1f})")
+
     return round(score, 2), reasons
 
 
 def recommend_songs(user_prefs: Dict, songs: List[Dict], k: int = 5,
-                    strategy: ScoringStrategy = BALANCED) -> List[Tuple[Dict, float, str]]:
+                    strategy: ScoringStrategy = BALANCED,
+                    max_per_artist: Optional[int] = None) -> List[Tuple[Dict, float, str]]:
     """
     Functional implementation of the recommendation logic.
     Required by src/main.py
+
+    `max_per_artist` (optional) caps how many songs one artist may fill in the
+    top-k (a diversity control); `None` keeps the plain top-k behavior.
     """
     scored = []
     for song in songs:
         score, reasons = score_song(user_prefs, song, strategy)
         scored.append((song, score, "; ".join(reasons or ["no strong matches"])))
 
-    # _top_k builds a new list via sorted(), so the caller's `songs` catalog is
-    # left untouched. Ties break on id so runs repeat.
+    # Both ranking paths build a new list, so the caller's `songs` is left
+    # untouched. Ties break on id so runs repeat.
+    if max_per_artist is not None and max_per_artist > 0:
+        return _diverse_top_k(scored, k, max_per_artist)
     return _top_k(scored, lambda item: item[1], lambda item: item[0]["id"], k)

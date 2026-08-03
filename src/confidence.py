@@ -36,7 +36,9 @@ def score_confidence(scored: Scored, strategy: ScoringStrategy = BALANCED) -> Di
         return {"confidence": 0.0, "strong_matches": 0, "note": "No matches found."}
 
     top = scored[0][1]
-    confidence = round(min(top / max_score, 1.0), 2) if max_score > 0 else 0.0
+    # Floored at 0 (and capped at 1): dislike penalties can drive a top score
+    # negative, but confidence stays within its documented 0-1 contract.
+    confidence = round(min(max(top / max_score, 0.0), 1.0), 2) if max_score > 0 else 0.0
     strong_matches = sum(1 for _, score, _ in scored if score >= strong_min)
 
     if strong_matches == 0:
