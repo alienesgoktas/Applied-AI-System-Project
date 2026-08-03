@@ -57,45 +57,33 @@ def get_logger() -> logging.Logger:
     return logger
 
 
-def recommend_from_query(
+def recommend_for_profile(
     query: str,
+    profile: Dict,
     songs: List[Dict],
     k: int = 5,
     *,
     backend=None,
     strategy: ScoringStrategy = BALANCED,
-    blocked_genres: Optional[List[str]] = None,
     max_per_artist: Optional[int] = None,
+    profile_source: str = "given",
 ) -> Dict:
-    """Run the full RAG pipeline and return a structured result dict.
+    """Retrieve + explain from an ALREADY-PARSED profile (skips NL parsing).
 
-    Keys: ``query, profile, profile_source, results, confidence, explanation,
-    used_llm, backend``. ``results`` are ``(song, score, reasons)`` tuples from the
-    retriever (the authoritative, deterministic record the caller renders).
+    Shared by ``recommend_from_query`` and the conversational-refinement path,
+    which mutates a profile between turns. Returns the same result-dict shape.
     """
     log = get_logger()
     backend_name = getattr(backend, "name", "offline") if backend is not None else "offline"
-    log.info("query=%r backend=%s k=%d strategy=%s", query, backend_name, k, strategy.name)
-
-    profile, profile_source = parse_profile(query, songs, backend=backend)
-    if blocked_genres:  # merge UI-selected blocks with any the parser found
-        merged = set(profile.get("blocked_genres") or []) | {str(g).lower() for g in blocked_genres}
-        profile = {**profile, "blocked_genres": sorted(merged)}
-    log.info("profile_source=%s profile=%s", profile_source, profile)
 
     results = recommend_songs(profile, songs, k=k, strategy=strategy, max_per_artist=max_per_artist)
     breakdowns = [score_detail(profile, song, strategy)[1] for song, _score, _reason in results]
     conf = score_confidence(results, strategy)
-    log.info(
-        "results=%d confidence=%s strong_matches=%d",
-        len(results),
-        conf["confidence"],
-        conf["strong_matches"],
-    )
-
     explanation, used_llm = generate_explanation(query, results, backend=backend)
-    log.info("explanation_used_llm=%s", used_llm)
-
+    log.info(
+        "for_profile query=%r source=%s results=%d confidence=%s used_llm=%s",
+        query, profile_source, len(results), conf["confidence"], used_llm,
+    )
     return {
         "query": query,
         "profile": profile,
@@ -107,3 +95,32 @@ def recommend_from_query(
         "used_llm": used_llm,
         "backend": backend_name,
     }
+
+
+def recommend_from_query(
+    query: str,
+    songs: List[Dict],
+    k: int = 5,
+    *,
+    backend=None,
+    strategy: ScoringStrategy = BALANCED,
+    blocked_genres: Optional[List[str]] = None,
+    max_per_artist: Optional[int] = None,
+) -> Dict:
+    """Run the full RAG pipeline (NL parse -> retrieve -> explain) and return a
+    structured result dict. Keys: ``query, profile, profile_source, results,
+    breakdowns, confidence, explanation, used_llm, backend``.
+    """
+    log = get_logger()
+    backend_name = getattr(backend, "name", "offline") if backend is not None else "offline"
+    log.info("query=%r backend=%s k=%d strategy=%s", query, backend_name, k, strategy.name)
+
+    profile, profile_source = parse_profile(query, songs, backend=backend)
+    if blocked_genres:  # merge UI-selected blocks with any the parser found
+        merged = set(profile.get("blocked_genres") or []) | {str(g).lower() for g in blocked_genres}
+        profile = {**profile, "blocked_genres": sorted(merged)}
+
+    return recommend_for_profile(
+        query, profile, songs, k=k, backend=backend, strategy=strategy,
+        max_per_artist=max_per_artist, profile_source=profile_source,
+    )

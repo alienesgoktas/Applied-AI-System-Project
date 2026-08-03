@@ -22,7 +22,8 @@ from src.backends import (
     AnthropicBackend,
     LocalServerBackend,
 )
-from src.pipeline import backend_label, recommend_from_query
+from src.llm import refine_profile
+from src.pipeline import backend_label, recommend_for_profile, recommend_from_query
 from src.recommender import BALANCED, STRATEGIES, ScoringStrategy, load_songs
 
 CATALOG = "data/songs.csv"
@@ -98,30 +99,60 @@ with st.sidebar:
 query = st.text_input("Your request", placeholder="e.g. chill acoustic music to study to")
 go = st.button("Recommend", type="primary")
 
+# Backend/strategy/k are rebuilt every rerun from the current sidebar, so refinements
+# below always use the controls the user currently sees.
+backend = _build_backend(choice, cfg)
+
 if go and query.strip():
-    backend = _build_backend(choice, cfg)
     with st.spinner("Thinking..."):
-        result = recommend_from_query(
+        st.session_state["result"] = recommend_from_query(
             query.strip(), songs, k=k, backend=backend, strategy=strategy,
             blocked_genres=blocked_genres or None, max_per_artist=max_per_artist,
         )
+elif go:
+    st.warning("Type a request first.")
 
-    badge = backend_label(result)
 
+def _refine_and_rerun(new_profile: dict) -> None:
+    """Re-run the pipeline from a refined profile, then re-render (session-only)."""
+    prev = st.session_state["result"]
+    st.session_state["result"] = recommend_for_profile(
+        prev["query"], new_profile, songs, k=k, backend=backend, strategy=strategy,
+        max_per_artist=max_per_artist, profile_source="refined",
+    )
+    st.rerun()
+
+
+result = st.session_state.get("result")
+if result:
     profile = result["profile"]
     conf = result["confidence"]
 
-    st.subheader(f"Results  ·  `{badge}`")
-    st.write(
+    st.subheader(f"Results  ·  `{backend_label(result)}`")
+    understood = (
         f"**Understood as:** {profile['favorite_genre'] or '(any)'} / "
         f"{profile['favorite_mood'] or '(any)'} · energy {profile['target_energy']:.2f} · "
         f"valence {profile['target_valence']:.2f} · "
         f"{'acoustic' if profile['likes_acoustic'] else 'produced'}"
     )
+    if profile.get("blocked_genres"):
+        understood += f" · blocking {', '.join(profile['blocked_genres'])}"
+    st.write(understood)
     st.progress(
         min(conf["confidence"], 1.0),
         text=f"Confidence {conf['confidence']:.2f} - {conf['note']}",
     )
+
+    # Conversational refinement — multi-turn steering, session-only (nothing persisted).
+    with st.form("refine_form", clear_on_submit=True):
+        refine_text = st.text_input(
+            "Refine your results",
+            placeholder="make it calmer  ·  no pop  ·  more like #2",
+        )
+        if st.form_submit_button("Refine") and refine_text.strip():
+            _refine_and_rerun(refine_profile(
+                profile, refine_text.strip(), songs, backend=backend,
+                last_results=result["results"]))
 
     for rank, (song, score, reasons) in enumerate(result["results"], 1):
         with st.container(border=True):
@@ -139,6 +170,15 @@ if go and query.strip():
                      "points": [round(pts, 2) for _, pts in bd]},
                     x="term", y="points", horizontal=True, height=160,
                 )
+            fb_up, fb_down = st.columns(2)
+            if fb_up.button("👍 more like this", key=f"up{rank}"):
+                _refine_and_rerun(refine_profile(
+                    profile, f"more like #{rank}", songs, backend=backend,
+                    last_results=result["results"]))
+            if fb_down.button(f"👎 less {song['genre']}", key=f"dn{rank}"):
+                _refine_and_rerun(refine_profile(
+                    profile, f"no {song['genre']}", songs, backend=backend,
+                    last_results=result["results"]))
 
     st.divider()
     st.markdown("**AI summary** *(advisory - the scoring reasons above are the record)*")
@@ -165,5 +205,3 @@ if go and query.strip():
                          file_name="playlist.txt", mime="text/plain")
     col2.download_button("Download data (.json)", json.dumps(export, indent=2),
                          file_name="recommendations.json", mime="application/json")
-elif go:
-    st.warning("Type a request first.")

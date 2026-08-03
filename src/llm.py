@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 logger = logging.getLogger("recommender.llm")
 
@@ -96,6 +96,20 @@ _SAD = {"sad", "dark", "melancholy", "moody", "down", "gloomy", "somber",
         "depressing", "blue"}
 _ACOUSTIC = {"acoustic", "unplugged", "organic", "folk", "stripped"}
 _PRODUCED = {"produced", "electronic", "synth", "edm", "electro", "digital"}
+
+# Refinement deltas ("make it calmer", "happier", ...) for the offline path.
+_CALMER = {"calmer", "calm", "chill", "chiller", "slower", "softer", "mellow", "relax", "quieter"}
+_LOUDER = {"louder", "harder", "faster", "hype", "energetic", "intense", "pump", "hyped"}
+_HAPPIER = {"happier", "brighter", "cheerful", "positive", "upbeat"}
+_SADDER = {"sadder", "darker", "moodier", "gloomier", "melancholy", "somber"}
+
+REFINE_SYSTEM = (
+    "You adjust a listener's music taste profile from a follow-up request. Known genres: "
+    "{genres}. Known moods: {moods}. Given the CURRENT profile and the refinement, return the "
+    "UPDATED full profile as JSON with the same keys (favorite_genre, favorite_mood, "
+    "target_energy 0-1, target_valence 0-1, likes_acoustic true/false, blocked_genres list). "
+    "Keep fields the refinement doesn't mention unchanged."
+)
 
 
 def _vocab(songs: List[Dict]) -> Tuple[Set[str], Set[str]]:
@@ -213,6 +227,117 @@ def parse_profile(query: str, songs: List[Dict], *, backend=None) -> Tuple[Dict,
         except Exception as exc:  # noqa: BLE001 - any failure degrades to offline
             logger.warning("LLM profile parse failed (%s); using offline parser", exc)
     return _keyword_profile(query, songs), "offline"
+
+
+# --- Conversational refinement ----------------------------------------------------
+
+# "\b" before the optional "more" keeps "dislike #2" from matching (no boundary inside
+# "dislike"), so a 👎 phrase is never misread as a "more like #N" adoption.
+_REF_RE = re.compile(r"\b(?:more\s+)?(?:like|number)\s*#?\s*(\d+)")
+
+
+def _referenced_song(text: str, last_results) -> Optional[Dict]:
+    """The song a "(more) like #N" / "number N" phrase points at, or None.
+
+    Single source for reference resolution, used by both the LLM and offline paths so
+    "#N" is honored regardless of backend (the LLM never sees the result list).
+    """
+    if not last_results:
+        return None
+    m = _REF_RE.search(_norm(text))
+    if not m:
+        return None
+    idx = int(m.group(1)) - 1
+    if 0 <= idx < len(last_results):
+        return last_results[idx][0]
+    return None
+
+
+def _refine_offline(prev: Dict, text: str, songs: List[Dict]) -> Dict:
+    """Deterministic keyword deltas applied to a copy of the current profile.
+
+    Reference resolution ("#N") is handled by the caller (`refine_profile`), so `text`
+    here is the residual steering after any reference phrase is stripped.
+    """
+    prof = dict(prev)
+    q_clean = " " + re.sub(r"[^a-z0-9&]+", " ", _norm(text)).strip() + " "
+    tokens = set(q_clean.split())
+    genres, _moods = _vocab(songs)
+
+    if tokens & _LOUDER:
+        prof["target_energy"] = _clamp01(round(prof.get("target_energy", 0.5) + 0.2, 2))
+    elif tokens & _CALMER:
+        prof["target_energy"] = _clamp01(round(prof.get("target_energy", 0.5) - 0.2, 2))
+    if tokens & _HAPPIER:
+        prof["target_valence"] = _clamp01(round(prof.get("target_valence", 0.5) + 0.2, 2))
+    elif tokens & _SADDER:
+        prof["target_valence"] = _clamp01(round(prof.get("target_valence", 0.5) - 0.2, 2))
+    if tokens & _ACOUSTIC:
+        prof["likes_acoustic"] = True
+    elif tokens & _PRODUCED:
+        prof["likes_acoustic"] = False
+
+    # "no <genre>" adds a block (phrase-level, multi-word aware).
+    neg = ("no", "not", "without", "avoid", "hate", "skip")
+    new_blocks = {g for g in genres if any(f" {nw} {g} " in q_clean for nw in neg)}
+    if new_blocks:
+        prof["blocked_genres"] = sorted(set(prof.get("blocked_genres") or []) | new_blocks)
+        if prof.get("favorite_genre") in new_blocks:
+            prof["favorite_genre"] = ""
+
+    # "more/add/some <genre>" switches the favorite genre.
+    for g in sorted(genres, key=len, reverse=True):
+        if g not in new_blocks and any(f" {w} {g} " in q_clean for w in ("more", "add", "some")):
+            prof["favorite_genre"] = g
+            break
+
+    return prof
+
+
+def refine_profile(prev_profile: Dict, text: str, songs: List[Dict], *,
+                   backend=None, last_results=None) -> Dict:
+    """Apply a natural-language refinement to an existing profile; return a new profile.
+
+    A "(more) like #N" reference is resolved deterministically FIRST (the LLM never sees
+    the result list): the referenced song's genre/energy/valence seed the profile, and a
+    bare reference short-circuits without an LLM call. Residual steering then goes to the
+    LLM (full updated profile) or, on any failure, deterministic keyword deltas
+    (`_refine_offline`). `last_results` is the previous ``(song, score, reason)`` list.
+    """
+    prof = dict(prev_profile)
+    text_norm = _norm(text)
+    ref = _referenced_song(text, last_results)
+    remaining = text_norm
+    if ref is not None:
+        prof["favorite_genre"] = _norm(ref.get("genre", prof.get("favorite_genre", "")))
+        prof["target_energy"] = _clamp01(ref.get("energy"), prof.get("target_energy", 0.5))
+        prof["target_valence"] = _clamp01(ref.get("valence"), prof.get("target_valence", 0.5))
+        remaining = _REF_RE.sub(" ", text_norm).strip()
+        if not remaining:  # pure "more like #N" — fully deterministic, no LLM needed
+            return prof
+
+    if backend is not None:
+        try:
+            genres, moods = _vocab(songs)
+            system = REFINE_SYSTEM.format(
+                genres=", ".join(sorted(genres)) or "(none)",
+                moods=", ".join(sorted(moods)) or "(none)",
+            )
+            user = (
+                f"Current profile - genre: {prof.get('favorite_genre') or 'any'}, "
+                f"mood: {prof.get('favorite_mood') or 'any'}, "
+                f"target_energy: {prof.get('target_energy')}, "
+                f"target_valence: {prof.get('target_valence')}, "
+                f"likes_acoustic: {prof.get('likes_acoustic')}, "
+                f"blocked_genres: {prof.get('blocked_genres') or []}.\n"
+                f"Refinement request: {remaining}"
+            )
+            profile = _coerce_profile(backend.complete_json(system, user, PROFILE_SCHEMA))
+            logger.info("profile refined via %s", getattr(backend, "name", "llm"))
+            return profile
+        except Exception as exc:  # noqa: BLE001 - any failure degrades to offline
+            logger.warning("LLM refine failed (%s); using offline delta", exc)
+    return _refine_offline(prof, remaining, songs)
 
 
 # --- Grounded explanation ---------------------------------------------------------
