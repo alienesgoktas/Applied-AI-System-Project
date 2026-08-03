@@ -2,24 +2,6 @@ from src.pipeline import recommend_from_query
 from src.recommender import BALANCED, load_songs, recommend_songs
 
 
-class RoutingBackend:
-    """Fake backend that returns a profile or an explanation by schema shape."""
-
-    name = "fake"
-
-    def __init__(self, profile=None, explain=None, error=None):
-        self._profile = profile
-        self._explain = explain
-        self._error = error
-
-    def complete_json(self, system, user, schema):
-        if self._error is not None:
-            raise self._error
-        if "picks" in schema.get("properties", {}):
-            return self._explain
-        return self._profile
-
-
 def _songs():
     return load_songs("data/songs.csv")
 
@@ -40,24 +22,24 @@ def test_pipeline_results_always_carry_deterministic_reasons():
         assert isinstance(reasons, str) and reasons.strip()
 
 
-def test_pipeline_guardrail_rejects_hallucinated_title():
+def test_pipeline_guardrail_rejects_hallucinated_title(fake_backend):
     songs = _songs()
     profile = {"favorite_genre": "pop", "favorite_mood": "happy",
                "target_energy": 0.8, "target_valence": 0.7, "likes_acoustic": False}
     explain = {"summary": "x", "picks": [{"title": "Nonexistent Track 999", "why": "fake"}]}
-    backend = RoutingBackend(profile=profile, explain=explain)
+    backend = fake_backend(profile=profile, explain=explain)
     res = recommend_from_query("upbeat happy pop", songs, k=3, backend=backend)
     assert res["used_llm"] is False
     assert "Nonexistent Track 999" not in res["explanation"]
 
 
-def test_pipeline_uses_valid_llm_explanation():
+def test_pipeline_uses_valid_llm_explanation(fake_backend):
     songs = _songs()
     profile = {"favorite_genre": "pop", "favorite_mood": "happy",
                "target_energy": 0.8, "target_valence": 0.7, "likes_acoustic": False}
     top_title = recommend_songs(profile, songs, k=3, strategy=BALANCED)[0][0]["title"]
     explain = {"summary": "Here you go.", "picks": [{"title": top_title, "why": "matches your vibe"}]}
-    backend = RoutingBackend(profile=profile, explain=explain)
+    backend = fake_backend(profile=profile, explain=explain)
     res = recommend_from_query("upbeat happy pop", songs, k=3, backend=backend)
     assert res["used_llm"] is True
     assert top_title in res["explanation"]

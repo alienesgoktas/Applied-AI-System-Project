@@ -17,6 +17,19 @@ from src.confidence import score_confidence
 from src.llm import generate_explanation, parse_profile
 from src.recommender import BALANCED, ScoringStrategy, recommend_songs
 
+
+def backend_label(result: Dict) -> str:
+    """The provider that actually served this result: 'local'/'anthropic'/'offline'.
+
+    Returns 'offline' whenever no LLM path ran (deterministic fallback), regardless
+    of which backend was configured. Shared by the CLI and web UIs so the badge
+    logic lives in one place.
+    """
+    provider = result["backend"].split(":")[0]
+    llm_active = result["used_llm"] or result["profile_source"] == "llm"
+    return provider if llm_active else "offline"
+
+
 _LOG_DIR = "logs"
 _configured = False
 

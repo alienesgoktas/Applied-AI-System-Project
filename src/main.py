@@ -15,7 +15,7 @@ Usage:
 import sys
 
 from src.backends import select_backend
-from src.pipeline import recommend_from_query
+from src.pipeline import backend_label, recommend_from_query
 from src.recommender import load_songs
 
 CATALOG = "data/songs.csv"
@@ -24,9 +24,7 @@ DEMO_QUERY = "upbeat happy pop for a workout"
 
 def _print_result(result: dict) -> None:
     """Print one pipeline result: header, ranked songs + reasons, AI summary."""
-    provider = result["backend"].split(":")[0]
-    llm_active = result["used_llm"] or result["profile_source"] == "llm"
-    badge = f"[{provider}]" if llm_active else "[offline]"
+    badge = f"[{backend_label(result)}]"
 
     p = result["profile"]
     conf = result["confidence"]
